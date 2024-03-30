@@ -1,8 +1,12 @@
 import os
 import copy
 import json
+import csv
+from collections import namedtuple
+
 import numpy as np
 from scipy.signal import find_peaks 
+
 
 import statsmodels.api as sm
 
@@ -150,9 +154,28 @@ def get_feature2epd_dict(list_epds):
             }
     return _d
 
+def get_epd_stats(list_epds, natural_ratio_limit=0.5):
+    '''
+    Get numbers of khipus and singletons, and isopairs and good khipus.
+    Good khipu = isopair and M0 being a good feature.
+    Has to run after epd2featurelist_from_file.
+    Returns dict.
+    '''
+    khipus_isopairs, num_isopair_mtracks, good_khipus = get_isopairs_good_khipus(list_epds, natural_ratio_limit)
+
+    # M0 must be always the first item in MS1_pseudo_Spectra
+    return {
+        'num_empcpds': len(list_epds),
+        'num_khipus_isopairs': len(khipus_isopairs),
+        'num_isopair_mtracks': num_isopair_mtracks,
+        'num_good_khipus': len(good_khipus),
+        'num_singletons': count_singletons(list_epds),
+        'good_khipus': good_khipus
+    }
+
 def epd2featurelist_from_file(file, snr=5, shape=0.9):
     '''
-    returns list_features, feature2epd_dict
+    returns list_features, feature2epd_dict, epd_summary
     '''
     list_epds = json.load(open(file))
     for epd in list_epds:
@@ -162,7 +185,32 @@ def epd2featurelist_from_file(file, snr=5, shape=0.9):
             f['peak_area'] = float(f['peak_area'])
             f['is_good_peak'] = check_good_peak(f, snr, shape)
             
-    return epd2featurelist(list_epds), get_feature2epd_dict(list_epds)
+    return epd2featurelist(list_epds), get_feature2epd_dict(list_epds), get_epd_stats(list_epds)
+
+
+def read_master_datasets_records(infile='r1_datasets_stats.tsv', sep='\t'):
+    '''
+    returns
+    dict of namedTuples
+    '''
+    Dataset = namedtuple('Dataset', ['feature_table_id',
+                                    'mode',
+                                    'chromatography',
+                                    'num_samples',
+                                    'num_features',
+                                    'num_good_features',
+                                    'num_empcpds',
+                                    'num_khipus_isopairs',
+                                    'num_isopair_mtracks',
+                                    'num_good_khipus',
+                                    'num_singletons',
+                                    'mz_calibration_ratio',
+                                    'num_features_matched_csm'])
+    d = {}
+    for dts in map(Dataset._make, csv.reader(open(infile, "r"), delimiter=sep)):
+        d[dts.feature_table_id] = dts
+    return d
+
 
 def short_vtrack_summary(d):
     # ['id', 'numb_good_features', 'median_numb_hilic_features_perdataset', 'median_num_rp_features_perdataset', 'num_all_features',
@@ -506,23 +554,33 @@ def custom_export_peak_annotation(dict_empCpds, kcd_instance, export_file_name):
 #
 # Get empCpds by filtering 13C/12C pattern
 #
+
+def get_feature_of_max_intensity(featureList):
+    '''
+    To get feature of max intensity, and avoid errors by sorting.
+    e.g. sorted(M0, reverse=True)[0][1] leas to `TypeError: '<' not supported between instances of 'dict' and 'dict'`
+    Use np.argmax here, which is okay with ties.
+    '''
+    ints = [f['representative_intensity'] for f in featureList]
+    idx = np.argmax(ints)
+    return featureList[idx]
+
 def get_M0(MS1_pseudo_Spectra):
     '''returns M0 feature with highest representative_intensity.
     Without verifying which ion form.'''
-    M0 = [(f['representative_intensity'], f) for f in 
-          MS1_pseudo_Spectra if f['isotope']=='M0']
+    M0 = [f for f in MS1_pseudo_Spectra if f['isotope']=='M0']
     if M0:
-        return sorted(M0, reverse=True)[0][1]
+        return get_feature_of_max_intensity(M0)
     else:
         return []
     
 def get_M1(MS1_pseudo_Spectra):
     '''returns M+1 feature with highest representative_intensity.
     Without verifying which ion form.'''
-    M = [(f['representative_intensity'], f) for f in 
+    M = [f for f in 
           MS1_pseudo_Spectra if f['isotope']=='13C/12C']
     if M:
-        return sorted(M, reverse=True)[0][1]
+        return get_feature_of_max_intensity(M)
     else:
         return []
      
@@ -530,10 +588,10 @@ def get_highest_13C(MS1_pseudo_Spectra):
     '''returns 13C labeled feature with highest representative_intensity.
     Without verifying which ion form. Because the label goes with sepecific atoms depending on pathway.
     '''
-    M = [(f['representative_intensity'], f) for f in 
+    M = [f for f in 
           MS1_pseudo_Spectra if '13C/12C' in f['isotope']]
     if M:
-        return sorted(M, reverse=True)[0][1]
+        return get_feature_of_max_intensity(M)
     else:
         return []
 
@@ -541,26 +599,64 @@ def get_highest_13C(MS1_pseudo_Spectra):
 def filter_khipus(list_empCpds, natural_ratio_limit=0.5):
     '''
     returns 
-    list of khipus with good natural 13C ratio, based on M1/M0, not checking adduct form.
-    
+    isopair_empCpds = with good natural 13C ratio, based on M1/M0, not checking adduct form.
+ 
     Usage
     -----
     full_list_empCpds  = json.load(open(json_empcpd))
     isopair_empCpds = filter_khipus(full_list_empCpds)
 
     '''
-    khipus_good_natural_ratios = []
+    isopair_empCpds = []
     for epd in list_empCpds:
         # interim_id = v['interim_id']
         M0, M1 = get_M0(epd['MS1_pseudo_Spectra']), get_M1(epd['MS1_pseudo_Spectra'])
         if M0 and M1:
             if float(M1['representative_intensity'])/(1 + float(M0['representative_intensity'])) < natural_ratio_limit:
-                khipus_good_natural_ratios.append( epd['interim_id'] )
+                isopair_empCpds.append( epd['interim_id'] )
 
-    return khipus_good_natural_ratios
+    return isopair_empCpds
     
+    
+def get_isopairs_good_khipus(list_empCpds, natural_ratio_limit=0.5):
+    '''
+    returns 
+    Two lists of khipus, isopair_empCpds_ids (IDs only), good_khipus (full dict), and number of isopair_mtracks.
+    isopair_empCpds = with good natural 13C ratio, based on M1/M0, not checking adduct form.
+    good_khipus = isopair_empCpds and M0 being a good feature.
+    
+    Some inline MS/MS expts cause split MS1 peaks. Thus isopair_mtracks are more indicative of the data coverage.
+    
+    Usage
+    -----
+    full_list_empCpds  = json.load(open(json_empcpd))
+    isopair_empCpds, num_isopair_mtracks, good_khipus = get_isopairs_good_khipus(full_list_empCpds)
+
+    Use filter_khipus if not considering is_good_peak.
+    '''
+    isopair_empCpds_ids, isopair_mtracks, good_khipus = [], [], []
+    for epd in list_empCpds:
+        # interim_id = v['interim_id']
+        M0, M1 = get_M0(epd['MS1_pseudo_Spectra']), get_M1(epd['MS1_pseudo_Spectra'])
+        if M0 and M1:
+            if float(M1['representative_intensity'])/(1 + float(M0['representative_intensity'])) < natural_ratio_limit:
+                isopair_empCpds_ids.append( epd['interim_id'] )
+                if epd["MS1_pseudo_Spectra"][0]['is_good_peak']:
+                    good_khipus.append( epd )
+                    isopair_mtracks.append( epd["MS1_pseudo_Spectra"][0]['parent_masstrack_id'] )
+
+    return isopair_empCpds_ids, len(set(isopair_mtracks)), good_khipus
+    
+    
+def count_singletons(list_empCpds):
+    return len([epd for epd in list_empCpds if len(epd['MS1_pseudo_Spectra'])==1])
+    
+
     
 def get_isopair_features(full_list_empCpds, isopair_empCpds):
+    '''
+    Not clean, including more features than desired..
+    '''
     isopair_features = []
     for epd in full_list_empCpds:
         if epd['interim_id'] in isopair_empCpds:
@@ -666,6 +762,9 @@ def extract_segment_kde_peaks(sorted_mz_values,
         
     return result
 
+# --------------------------------------------------------------------------------
+# Similar functions below now in extDataModels
+#
 
 def summarize_ions(cfeature):
     '''
@@ -678,6 +777,7 @@ def summarize_ions(cfeature):
     _d.sort(reverse=True)
     
     return _d
+
 
 def summarize_vtrack(id_vtrack, vtrack, mode='pos', filtering=True):
     '''
