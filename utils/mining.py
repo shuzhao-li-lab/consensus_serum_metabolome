@@ -308,13 +308,52 @@ def export_json_consensus_vtracks(summary_tally, dataset_dict, outfile='vTracks_
 
 
 
-
-
-
-
 #
 # Annotation related
 #
+
+def calculate_neutral_mass_pos(mz, ion):
+    '''
+    ion in ['M0,Na/H', 'M0,M+H+', 'M0,M+H+, 2x charged', 'M0,Na/H, 2x charged', 
+                        'M0,M+H+, 3x charged', 'M0,Na/H, 3x charged']
+    '''
+    if ion == 'M0,M+H+':
+        return mz - 1.00728
+    elif ion == 'M0,Na/H':
+        return mz - 22.9893
+    elif ion == 'M0,M+H+, 2x charged':
+        return (mz - 1.00728) * 2
+    elif ion == 'M0,M+H+, 3x charged':
+        return (mz - 1.00728) * 3
+    elif ion == 'M0,Na/H, 2x charged':
+        return (mz - 22.9893) * 2
+    elif ion == 'M0,Na/H, 3x charged':
+        return (mz - 22.9893) * 3
+    else:
+        return None
+    
+    
+def calculate_neutral_mass_neg(mz, ion):
+    '''
+    ion in [["M0,Na/H", "M0,M-H-", "M0,Na/H, 2x charged", "M0,M-H-, 2x charged", 
+                        "M0,Na/H, 3x charged", "M0,M-H-, 3x charged"]]
+    Some not so frequent - maybe adjust later.
+    '''
+    if ion == 'M0,M-H-':
+        return mz + 1.00728
+    elif ion == 'M0,Na/H':
+        return mz - 21.9820
+    elif ion == 'M0,M-H-, 2x charged':
+        return (mz + 1.00728) * 2
+    elif ion == 'M0,M-H-, 3x charged':
+        return (mz + 1.00728) * 3
+    elif ion == 'M0,Na/H, 2x charged':
+        return (mz - 21.9820) * 2
+    elif ion == 'M0,Na/H, 3x charged':
+        return (mz - 21.9820) * 3
+    else:
+        return None
+    
 
 # mass calibration
 def custom_mz_calibrate(features, 

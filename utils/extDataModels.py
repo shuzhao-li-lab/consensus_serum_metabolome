@@ -139,7 +139,57 @@ class cmTrack:
         Use good features only.
         '''
         for c in self.chromatography_types:
-            self.dict_summary[c] = self.analyze_group_features(c, self.dict_datasets[c])
+            self.dict_summary[c] = self.make_concise_epds(
+                                        self.analyze_group_features(c, self.dict_datasets[c])
+                                        )
+        
+        
+    def make_concise_epds(self, d):
+        '''
+        Get a concise version of list of epds. Input is like:
+        {'chromatography': 'HILIC',
+                    'mode': 'pos',
+                    'list_empCpds': [{'representative_feature': {'id': 'F1151',
+                                    'rtime': 73.55,
+                                    'is_good_peak': True,
+                                    'snr': 3407.0,
+                                    'dataset_id': 'ST001004_HILICpos_HILICpos_batch2_ppm5_361020',
+                                    'parent_epd_id': 'kp11_85.0526',
+                                    'neutral_formula_mass': 85.05264603323,
+                                    'ion_relation': '13C/12C,M+H+'},
+                                    'ion_relation': '13C/12C,M+H+',
+                                    'ion_count': 41,
+                                    'id': 'r1_pos_87.063389_epd_0'},
+                                {'representative_feature': {'id': 'F1145',
+                                    'rtime': 3.12,
+                                    'is_good_peak': True,
+                                    'snr': 25.0,
+                                    'dataset_id': 'ST001004_HILICpos_HILICpos_batch2_ppm5_361020',
+                                    'parent_epd_id': '_singleton_5461',
+                                    'neutral_formula_mass': None,
+                                    'ion_relation': ''},
+                                    'ion_relation': '13C/12C,M+H+',
+                                    'ion_count': 42,
+                                    'id': 'r1_pos_87.063389_epd_1'}],
+                    'representative': 'ST001004_HILICpos_HILICpos_batch2_ppm5_361020',
+                    'median_feature_number': 2}
+        '''
+        def shrink_epd(epd):
+            return {
+                'id': epd['id'],
+                'ion_count': epd['ion_count'],
+                'ion_relation': epd['ion_relation'],
+                'representative_feature': {
+                    'id': epd['representative_feature']['id'],
+                    'rtime': epd['representative_feature']['rtime'],
+                    'snr': epd['representative_feature']['snr'],
+                }
+            }
+        return {
+                    'representative': d['representative'],
+                    'median_feature_number': d['median_feature_number'],
+                    'list_empCpds': [shrink_epd(e) for e in d['list_empCpds']]
+                }
         
         
     def analyze_group_features(self, chromatography, datasets):
@@ -148,20 +198,34 @@ class cmTrack:
         '''
         new = {'chromatography': chromatography,
                'mode': self.mode,
+               'list_empCpds': [],
+               'representative': None,
+               'median_feature_number': None
                }
-        median_feature_number = np.median([len(v) for v in datasets.values()])
-        median_feature_number = round(median_feature_number + 0.01) # covers the case of tied median, e.g. 2.5
-        new['median_feature_number'] = median_feature_number
-        conformed_datasets_ids = [k for k,v in datasets.items() if len(v)==median_feature_number]
-        representative = self.get_representative_dataset(conformed_datasets_ids, datasets)
-        new['representative'] = representative
-        
-        # determine empCpds by popular votes
-        list_empCpds = self.vote_consensus_epds(
-            datasets[representative], [datasets[ii] for ii in conformed_datasets_ids]
-        )
-        new['list_empCpds'] = list_empCpds
-        
+        if datasets:
+            median_feature_number = np.median([len(v) for v in datasets.values()])
+            median_feature_number = round(median_feature_number + 0.01) # covers the case of tied median, e.g. 2.5
+            
+            conformed_datasets_ids = [k for k,v in datasets.items() if len(v)==median_feature_number]
+            if conformed_datasets_ids:
+                representative = self.get_representative_dataset(conformed_datasets_ids, datasets)
+            else:
+                # representative is not matched to any; use the closest
+                conformed_datasets_ids = sorted([(abs(len(v)-median_feature_number), k) for k,v in datasets.items()])
+                representative = conformed_datasets_ids[0][1]
+                conformed_datasets_ids = [representative]
+                median_feature_number = len(datasets[representative])
+                
+            new['representative'] = representative
+            new['median_feature_number'] = median_feature_number
+            # determine empCpds by popular votes
+            list_empCpds = self.vote_consensus_epds(
+                datasets[representative], [datasets[ii] for ii in conformed_datasets_ids], chromatography
+            )
+            new['list_empCpds'] = list_empCpds
+        else:  
+            print(self.id, datasets)
+            
         return new
         
         
@@ -177,25 +241,30 @@ class cmTrack:
 
     
     
-    def vote_consensus_epds(self, representative_dataset, list_datasets):
+    def vote_consensus_epds(self, representative_dataset, list_datasets, chromatography):
         '''
         return list_empCpds
         
+        Ranked by RT now; 
+        will add ranking by intensity orders and other methods later.
+        Since the votes are limited to conformed mass tracks, not a major concern.
         
         '''
         def get_top_N_features(dataset, N):
             # return top N features in rtime order
-            LL = sorted([(x['snr'], x['rtime'], x) for x in dataset], reverse=True)
-            LL = sorted([(x[1], x[2]) for x in LL[:N]])
-            return [x[1] for x in LL]
+            LL = sorted(dataset, reverse=True, key=lambda x: x['snr'])
+            LL = sorted(LL[:N], key=lambda x: x['rtime'])
+            return LL
             
         def get_voted_ion(list_features):
-            # return top ion that is not '', e.g. (555, 'M0,M+H+')
+            # return top ion that is not '', e.g. (555, 'M0,M+H+'), if '' not the only one
             r = self.summarize_ions(list_features)
             if r[0][1]:
                 return r[0]
-            else:
+            elif len(r) > 1:
                 return r[1]
+            else:
+                return r[0]
             
         list_empCpds = []
         N = len(representative_dataset)
@@ -214,7 +283,7 @@ class cmTrack:
             count, ion = get_voted_ion([x[ii] for x in selected_features])
             list_empCpds[ii]['ion_relation'] = ion
             list_empCpds[ii]['ion_count'] = count
-            list_empCpds[ii]['id'] = self.id + '_epd_' + str(ii)
+            list_empCpds[ii]['id'] = self.id + '_' + chromatography + '_' + str(ii)
 
         return list_empCpds
 
@@ -270,29 +339,25 @@ if __name__ == "__main__":
     #with open('r1_dict_good_khipus.pickle', 'rb') as f:
     #    datasets_good_khipus = pickle.load(f)
         
-    with open('r1_dict_cmt_matched_features_neg.pickle', 'rb') as f:
+    with open('r1_dict_cmt_matched_features_pos.pickle', 'rb') as f:
         dict_cmt = pickle.load(f)
         
     datasets_meta_dict = read_master_datasets_records(infile='r1_datasets_stats.tsv', sep='\t')
         
-    test_cmt = 'r1_neg_359.124777'
+    test_cmt = 'r1_pos_302.232463'
     CMT = cmTrack(test_cmt,
-               mode='neg',
+               mode='pos',
                matched_features=dict_cmt[test_cmt],
                chromatography_types=['HILIC', 'RP']
                )
-	
-    print(dict_cmt[test_cmt][:3])
+    
+    print("\n\n~~~~~~~~~ start ~~~~~~~~~~\n\n")
+    print(test_cmt)
     
     CMT.summarize_features( datasets_meta_dict )
     
     # print to test
-
     print("\n\n~~~~~~~~~ summary ~~~~~~~~~~\n\n")
-    print(
-        CMT.dict_summary
-    )
-    
-    
-    
-    
+    for k,v in CMT.dict_summary.items():
+        print(k, v, '\n')
+   
