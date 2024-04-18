@@ -311,6 +311,8 @@ def export_json_consensus_vtracks(summary_tally, dataset_dict, outfile='vTracks_
 #
 # Annotation related
 #
+# khipu needs update on better calculation of multi-charged ions. But this is a start:
+#
 
 def calculate_neutral_mass_pos(mz, ion):
     '''
