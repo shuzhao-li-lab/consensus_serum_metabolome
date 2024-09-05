@@ -55,11 +55,11 @@ class extDataset:
         pass
     
     
-class cmTrack:
+class cmRegistry:
     '''
-    A consensus mass track from large-scale data mining.
+    A consensus mass registry from large-scale data mining.
     Unknown number of compounds may exist on a cmTrack.
-    The initial cmTrack is established by KDE peaks. 
+    The initial cmRegistry is established by KDE peaks, either pos or neg ion mode. 
     We keep list of good khipus here to facilitate preannotation.
     This implements popular votes to get represnetative empCpds on each chromatography and ionization mode.
     
@@ -325,6 +325,173 @@ class cmTrack:
 
     def export_json(self):
         return self.dict_summary
+
+
+
+
+class neutralMassRegistry:
+    '''
+    A unit for a specific neutral mass to include
+    a) various features in expt observations
+    b) list of theoretical compounds of this molecular weight
+    c) mapping algorithm to assign annotations.
+    
+    
+    '''
+    def __init__(self):
+        self.neutral_mass = None
+        self.list_methods = []
+        self.list_theoretical_cpds = []     # from database records
+        self.list_CSM_cpds = []        # in CSM
+        self.list_empCpds = []          # from user expt data to be annotated
+        self.from_user_libraries = []
+        self.assembled_data = {}
+        self.annotation = {}            # dict for each empCpd
+        
+    def assemble_data(self, ):
+        pass
+    
+    def get_match_user_libraries(self, user_libraries):
+        for LL in user_libraries:
+            self.from_user_libraries.append(
+                self.get_match_from_a_library(LL)
+            )
+    
+    def get_match_from_a_library(self, library):
+        
+        pass
+        
+    def map_annotation(self):
+        '''
+        Mapping experimental data to annotation.
+        Rationale:
+        1. if only one empCpd from user expt and only one theoretical_cpd, treat as a match.
+           If ionization is mismatch, lower confidence.
+        2. if multiple empCpds and/or multiple theoretical_cpds, match rank order, by
+           a) blood_conc or paper counts vs peak_area or snr,
+           b) xlogP vs rtime
+           c) to be added/improved methods
+           
+        returns recommendation per empCpd
+        '''
+        result = {}
+        if len(self.list_theoretical_cpds) == 0:
+            for x in self.list_empCpds:
+                    result[x['interim_id']] = {
+                    'best': None,
+                    'others': []
+                    }
+        else:
+            if len(self.list_empCpds) == 1:
+                
+                if len(self.list_theoretical_cpds) == 1:
+                    result[self.list_empCpds[0]['interim_id']] = {
+                        'best': self.list_theoretical_cpds[0],
+                        'others': []
+                    }
+                else:
+                    # pick best 
+                    _best = self.top_cpd_by_blood_conc(self.list_theoretical_cpds)
+                    if not _best:
+                        _best = self.top_cpd_by_BloodPaperCount(self.list_theoretical_cpds)
+                        if not _best:     # 1st one, as good as random 
+                            _best = self.list_theoretical_cpds[0]
+                    remaining = [x for x in self.list_theoretical_cpds if x['inchikey'] != _best['inchikey']]
+                    result[self.list_empCpds[0]['interim_id']] = {
+                        'best': _best,
+                        'others': remaining
+                    }
+            else:       # Multiple input user empCpds
+                if len(self.list_theoretical_cpds) == 1:
+                    for x in self.list_empCpds:
+                        result[x['interim_id']] = {
+                        'best': self.list_theoretical_cpds[0],
+                        'others': []
+                        }
+                else:
+                    # will need develop this; should be method dependent
+                    ranked_cpds = self.rank_cpds_(self.list_theoretical_cpds)
+                    ranked_epds = self.rank_epds_by_intensity(self.list_empCpds)
+                    NC, NE = len(ranked_cpds), len(ranked_epds)
+                    if NC > NE:
+                        # each epd at least gets one match
+                        for ii, x in enumerate(ranked_epds):
+                            result[x['interim_id']] = {
+                                'best': ranked_cpds[ii],
+                                'others': [x for x in self.list_theoretical_cpds if x['inchikey'] != ranked_cpds[ii]['inchikey']]
+                            }
+                    else:
+                        for ii, y in enumerate(ranked_cpds):
+                            result[ranked_epds[ii]['interim_id']] = {
+                                'best': y,
+                                'others': [x for x in self.list_theoretical_cpds if x['inchikey'] != y['inchikey']]
+                            }
+                        for ii in range(NE, NC):
+                            result[ranked_epds[ii]['interim_id']] = {
+                                'best': None,
+                                'others': self.list_theoretical_cpds
+                            }
+                        
+        self.annotation = result
+    
+    def map_annotation_singletons(self):
+        # with list of singleton features
+        # will rewrite
+        #
+        result = {}
+        for x in self.list_empCpds:
+            result[x['id']] = {
+            'best': None,
+            'others': self.list_theoretical_cpds
+            }
+        self.annotation = result
+    
+    
+    def top_cpd_by_blood_conc(self, LL):
+        new = [x for x in LL if x['blood_conc']]
+        if new:
+            return sorted(new, key=lambda x: x['blood_conc'])[-1]
+        else:
+            return None
+        
+    def top_cpd_by_BloodPaperCount(self, LL):
+        new = [x for x in LL if 'BloodPaperCount' in x and x['BloodPaperCount']]
+        if new:
+            return sorted(new, key=lambda x: x['BloodPaperCount'])[-1]
+        else:
+            return None
+        
+    def rank_cpds_(self, LL):
+        new = [x for x in LL if x['blood_conc']]
+        others = [x for x in LL if not x['blood_conc']]
+        new2, others2 = [], []
+        for x in others: 
+            if 'BloodPaperCount' in x and x['BloodPaperCount']:
+                new2.append(x)
+            else:
+                others2.append(x)
+        
+        return sorted(new, reverse=True, key=lambda x: x['blood_conc']) + sorted(
+            new2, reverse=True, key=lambda x: x['BloodPaperCount']
+            ) + others2
+        
+    def rank_epds_by_intensity(self, LL, sort_key='peak_area'):
+        # key can be ppeak_area, snr etc
+        return sorted(LL, reverse=True, key=lambda x: sum([y[sort_key] for y in x['MS1_pseudo_Spectra']]))
+        
+        
+        
+    def export_json(self):
+        # self.dict_summary
+        return {
+            'list_theoretical_cpds': self.list_theoretical_cpds,
+            'list_CSM_cpds': self.list_CSM_cpds,
+            'list_empCpds': self.list_empCpds,
+            'annotation': self.annotation,
+        }
+
+
+
 
 #
 # ----------------------------------------------

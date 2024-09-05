@@ -150,7 +150,8 @@ def get_feature2epd_dict(list_epds):
                 'ion_relation': f['ion_relation'],
                 'rtime': f['rtime'],
                 'snr': f['snr'],
-                'is_good_peak': f['is_good_peak']
+                'is_good_peak': f['is_good_peak'],
+                'detection_counts': f['detection_counts']
             }
     return _d
 
