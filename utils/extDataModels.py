@@ -5,20 +5,29 @@ How to get ion annotations from many source datasets by popular votes.
 import pickle
 import numpy as np
 
-# Primary ions used to select primary vTracks
-primary_ions_pos = set(['M0,Na/H', 'M0,M+H+', 
-                        'M0,M+H+, 2x charged', 'M0,Na/H, 2x charged', 
-                        'M0,M+H+, 3x charged', 'M0,Na/H, 3x charged'])
-primary_ions_neg = set(["M0,Na/H", "M0,M-H-", 
-                        "M0,Na/H, 2x charged", "M0,M-H-, 2x charged", 
-                        "M0,Na/H, 3x charged", "M0,M-H-, 3x charged"])
+# from .mining import primary_ions_pos, primary_ions_neg
 
-
-
-class extDataset:
+def no_tie_int_median(a):
     '''
-    # Placeholder, 
-    See read_master_datasets_records to get a dict of namedTuples for thsi purpose.
+    Parameter a : input as a list, not array.
+    Used to get consensus number of features on a mass registry. We don't want tied median here.
+    Returns the value above median if len(a) is even.
+    np.percentile changed argument, not to use to avoid version confusion.
+    
+    Note :
+    isinstance(m, int) doesn't work. 
+    This requires checking odd or even number as len(a), since even number can return an integer too.
+    '''
+    if len(a) % 2 == 0: # even number
+        return np.median( [-1] + a )
+    else :
+        return np.median(a)
+
+
+class ext_Dataset:
+    '''
+    # Placeholder, a conceptual class for a dataset.
+    See mining.read_master_datasets_records to get a dict of namedTuples for this purpose.
         
     desired:
         'feature_table_id',
@@ -65,7 +74,10 @@ class cmRegistry:
     
     '''
     def __init__(self, 
-                 id, mode, matched_features, 
+                 id, 
+                 mode, 
+                 matched_features, 
+                 dict_datasets_int_id,
                  chromatography_types=['HILIC', 'RP']
                  ):
         '''
@@ -73,19 +85,23 @@ class cmRegistry:
         matched_features are from tally_consensus_features_neg/pos.
         We also need an external reference of good khipus from all datasets.
         chromatography_types are 'HILIC' and 'RP' for now.
+        KDE value is not included here, but can be looked up elsewhere.
         '''
         self.id = id        # e.g., 'r1_pos_302.232463'; m/z is coded in id.
-        self.mode = mode    # 'pos'   # or 'neg'
+        self.mode = mode    # 'pos' or 'neg'. 'neu' will be a separate class
+        
         self.matched_features = matched_features
         self.good_features = [f for f in matched_features if f['is_good_peak']]
+
         self.chromatography_types = chromatography_types
+        self.dict_datasets_int_id = dict_datasets_int_id
         self.is_primary_track = None
         self.num_all_features = len(self.matched_features)
         self.numb_good_features = len(self.good_features)
         self.dict_datasets = {} # separate data by methods
         self.dict_summary = {}
         
-    def summarize_features(self, datasets_meta_dict):
+    def summarize_features(self, datasets_meta_dict, concise=False):
         '''
         We get list of matched features to a cmTrack, e.g. [   
             {'id': 'F36583',
@@ -107,11 +123,12 @@ class cmRegistry:
         '''
         self.ions = self.summarize_ions(self.matched_features)
         self.dict_datasets = self.group_data_by_methods(datasets_meta_dict)
-        self.summarize_chromatography_groups()
+        self.summarize_chromatography_groups(concise)
 
     def group_data_by_methods(self, datasets_meta_dict):
         '''
         Use good_features only.
+        
         datasets_meta_dict['MTBLS136_RPpos_B19_ppm5_3581551']:
             Dataset(feature_table_id='MTBLS136_RPpos_B19_ppm5_3581551', mode='pos', 
             chromatography='RP', num_samples='144', num_features='29442', num_good_features='13338', 
@@ -133,20 +150,21 @@ class cmRegistry:
         return dict_datasets
         
         
-    def summarize_chromatography_groups(self):
+    def summarize_chromatography_groups(self, concise=False):
         '''
         update dict_summary with number_ dataset stats and list of empCpds.
         Use good features only.
         '''
         for c in self.chromatography_types:
-            self.dict_summary[c] = self.make_concise_epds(
-                                        self.analyze_group_features(c, self.dict_datasets[c])
-                                        )
+            self.dict_summary[c] = self.make_concise_mr(
+                self.analyze_group_features(c, self.dict_datasets[c]), concise
+                                   )
         
         
-    def make_concise_epds(self, d):
+    def make_concise_mr(self, d, concise):
         '''
-        Get a concise version of list of epds. Input is like:
+        Get a concise version of list of epds. Not in use now.
+        Input is like:
         {'chromatography': 'HILIC',
                     'mode': 'pos',
                     'list_empCpds': [{'representative_feature': {'id': 'F1151',
@@ -177,20 +195,22 @@ class cmRegistry:
         def shrink_epd(epd):
             return {
                 'id': epd['id'],
-                'ion_count': epd['ion_count'],
-                'ion_relation': epd['ion_relation'],
+                'voted_ion_relation': epd['voted_ion_relation'],
                 'representative_feature': {
                     'id': epd['representative_feature']['id'],
                     'rtime': epd['representative_feature']['rtime'],
                     'snr': epd['representative_feature']['snr'],
                 }
             }
-        return {
+        if concise:
+            return {
                     'representative': d['representative'],
                     'median_feature_number': d['median_feature_number'],
-                    'list_empCpds': [shrink_epd(e) for e in d['list_empCpds']]
+                    'number_datasets': d['number_datasets'],
+                    'list_csm_features': [shrink_epd(e) for e in d['list_csm_features']]
                 }
-        
+        else:
+            return d
         
     def analyze_group_features(self, chromatography, datasets):
         '''
@@ -198,40 +218,42 @@ class cmRegistry:
         '''
         new = {'chromatography': chromatography,
                'mode': self.mode,
-               'list_empCpds': [],
+               # 'list_good_features': [], 
+               'list_csm_features': [],  # containing supporting features now
                'representative': None,
-               'median_feature_number': None
+               'median_feature_number': None,
+               'number_studies': None,
+               'number_datasets': None,
                }
         if datasets:
-            median_feature_number = np.median([len(v) for v in datasets.values()])
-            median_feature_number = round(median_feature_number + 0.01) # covers the case of tied median, e.g. 2.5
+            dataset_ids = list(datasets.keys())
+            study_ids = set([x.split('_')[0] for x in dataset_ids])     # assuming id format 'MTBLS136_RPpos_B9_ppm5_359148'
+            new['number_studies'] = len(study_ids)
+            new['number_datasets'] = len(dataset_ids)
             
+            # list_good_features can be 100s to 1000s
+            #for fl in datasets.values():
+            #    new['list_good_features'] += [(x['mz'], x['rtime'], x['snr'], x['dataset_id']) for x in fl]
+            
+            median_feature_number = no_tie_int_median([len(v) for v in datasets.values()])
             conformed_datasets_ids = [k for k,v in datasets.items() if len(v)==median_feature_number]
-            if conformed_datasets_ids:
-                representative = self.get_representative_dataset(conformed_datasets_ids, datasets)
-            else:
-                # representative is not matched to any; use the closest
-                conformed_datasets_ids = sorted([(abs(len(v)-median_feature_number), k) for k,v in datasets.items()])
-                representative = conformed_datasets_ids[0][1]
-                conformed_datasets_ids = [representative]
-                median_feature_number = len(datasets[representative])
-                
+            representative = self.get_representative_dataset(conformed_datasets_ids, datasets)
             new['representative'] = representative
+            new['representative_mass_track'] = []
             new['median_feature_number'] = median_feature_number
-            # determine empCpds by popular votes
-            list_empCpds = self.vote_consensus_epds(
+            # determine consensus features by popular votes
+            list_csm_features = self.vote_consensus_features(
                 datasets[representative], [datasets[ii] for ii in conformed_datasets_ids], chromatography
             )
-            new['list_empCpds'] = list_empCpds
+            new['list_csm_features'] = list_csm_features
         else:  
             print(self.id, datasets)
             
         return new
         
-        
     def get_representative_dataset(self, conformed_datasets_ids, datasets):
         '''
-        Get representative dataset with best ave SNR.
+        Get representative dataset with best ave SNR. Only from datasets with consensus number of features.
         '''
         ave_snrs = [
             np.mean([x['snr'] for x in datasets[ii]]) for ii in conformed_datasets_ids
@@ -239,11 +261,9 @@ class cmRegistry:
         idx = np.argmax(ave_snrs)
         return conformed_datasets_ids[idx]
 
-    
-    
-    def vote_consensus_epds(self, representative_dataset, list_datasets, chromatography):
+    def vote_consensus_features(self, representative_dataset, list_datasets, chromatography):
         '''
-        return list_empCpds
+        return list_csm_features
         
         Ranked by RT now; 
         will add ranking by intensity orders and other methods later.
@@ -258,6 +278,7 @@ class cmRegistry:
             
         def get_voted_ion(list_features):
             # return top ion that is not '', e.g. (555, 'M0,M+H+'), if '' not the only one
+            # input sensitive to rtime order
             r = self.summarize_ions(list_features)
             if r[0][1]:
                 return r[0]
@@ -266,11 +287,11 @@ class cmRegistry:
             else:
                 return r[0]
             
-        list_empCpds = []
+        list_csm_features = []
         N = len(representative_dataset)
         # use up to N best (snr) features per dataset
         for feature in representative_dataset:
-            list_empCpds.append(
+            list_csm_features.append(
                 {'representative_feature' : feature}
             )
             
@@ -280,13 +301,14 @@ class cmRegistry:
             selected_features.append(get_top_N_features(dataset, N))
                 
         for ii in range(N):
-            count, ion = get_voted_ion([x[ii] for x in selected_features])
-            list_empCpds[ii]['ion_relation'] = ion
-            list_empCpds[ii]['ion_count'] = count
-            list_empCpds[ii]['id'] = self.id + '_' + chromatography + '_' + str(ii)
+            members = [x[ii] for x in selected_features]
+            count, ion = get_voted_ion(members)
+            list_csm_features[ii]['members'] = [self.get_short_feature_tuple(x) for x in members]
+            list_csm_features[ii]['voted_ion_relation'] = ion
+            list_csm_features[ii]['votes'] = count
+            list_csm_features[ii]['id'] = self.id + '_' + chromatography + '_' + str(ii)
 
-        return list_empCpds
-
+        return list_csm_features
 
     def summarize_ions(self, features):
         '''
@@ -320,11 +342,20 @@ class cmRegistry:
         return _d
 
 
-    def determine_primary_track(self):
-        pass
+    def get_short_feature_tuple(self, x):
+        '''
+        returns ('dataset_id', 'int_id', 'mz', 'rtime', 'snr')
+        Use self.dict_datasets_int_id to convert int_id.
+        '''
+        return (
+            self.dict_datasets_int_id[x['dataset_id']], 
+            x['id'], 
+            x['mz'], x['rtime'], x['snr']
+        )
 
     def export_json(self):
         return self.dict_summary
+
 
 
 

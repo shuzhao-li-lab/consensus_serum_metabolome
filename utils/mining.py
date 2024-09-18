@@ -21,10 +21,14 @@ from asari.default_parameters import adduct_search_patterns, \
 
 
 # Primary ions used to select primary vTracks
-primary_ions_pos = set(['M0,Na/H', 'M0,M+H+', 'M0,M+H+, 2x charged', 'M0,Na/H, 2x charged', 
-                        'M0,M+H+, 3x charged', 'M0,Na/H, 3x charged'])
-primary_ions_neg = set(["M0,Na/H", "M0,M-H-", "M0,Na/H, 2x charged", "M0,M-H-, 2x charged", 
-                        "M0,Na/H, 3x charged", "M0,M-H-, 3x charged"])
+primary_ions_pos_ordered = ['M0,M+H+', 'M0,Na/H', 
+                            'M0,M+H+, 2x charged', 'M0,Na/H, 2x charged', 
+                            'M0,M+H+, 3x charged', 'M0,Na/H, 3x charged']
+primary_ions_neg_ordered = ["M0,M-H-", 
+                            "M0,M-H-, 2x charged", 
+                            "M0,M-H-, 3x charged"]
+primary_ions_pos = set(primary_ions_pos_ordered)
+primary_ions_neg = set(primary_ions_neg_ordered)
 
 
 #
@@ -140,20 +144,46 @@ def epd2featurelist(list_epds):
 
     return list_features
 
-def get_feature2epd_dict(list_epds):
+def get_feature2epd_dict(list_epds, mode):
     _d = {}
     for epd in list_epds:
+        primay_feature = get_primary_epd_feature(epd, mode)
         for f in epd["MS1_pseudo_Spectra"]:
             _d[f["id"]] = {
                 'parent_epd_id': epd['interim_id'],
                 'neutral_formula_mass': epd['neutral_formula_mass'],
                 'ion_relation': f['ion_relation'],
+                # establish primary ion feature here, i.e. link btw this and primary feature
+                'primary_ion_feature': primay_feature,
+                'mz': f['mz'],
                 'rtime': f['rtime'],
                 'snr': f['snr'],
                 'is_good_peak': f['is_good_peak'],
                 'detection_counts': f['detection_counts']
             }
     return _d
+
+
+def get_primary_epd_feature(epd, mode='pos'):
+    '''
+    Get feature ID of the primary ion in this epd.
+    '''
+    if mode == 'pos':
+        primary_ions = primary_ions_pos_ordered
+    elif mode == 'neg':
+        primary_ions = primary_ions_neg_ordered
+    else:
+        raise ValueError("ion mode error.")
+    
+    _primary = [f for f in epd["MS1_pseudo_Spectra"] if f['ion_relation'] in primary_ions]
+    if _primary:
+        _ordered = [
+            (primary_ions.index(f['ion_relation']), f['id']) for f in _primary
+        ]
+        return sorted(_ordered)[0][1]   # first f['id']
+    else:
+        return ''
+    
 
 def get_epd_stats(list_epds, natural_ratio_limit=0.5):
     '''
@@ -162,7 +192,8 @@ def get_epd_stats(list_epds, natural_ratio_limit=0.5):
     Has to run after epd2featurelist_from_file.
     Returns dict.
     '''
-    khipus_isopairs, num_isopair_mtracks, good_khipus = get_isopairs_good_khipus(list_epds, natural_ratio_limit)
+    khipus_isopairs, num_isopair_mtracks, good_khipus = get_isopairs_good_khipus(
+                                list_epds, natural_ratio_limit)
 
     # M0 must be always the first item in MS1_pseudo_Spectra
     return {
@@ -174,19 +205,20 @@ def get_epd_stats(list_epds, natural_ratio_limit=0.5):
         'good_khipus': good_khipus
     }
 
-def epd2featurelist_from_file(file, snr=5, shape=0.9):
+def epd2featurelist_from_file(file, mode='pos', snr=5, shape=0.9):
     '''
     returns list_features, feature2epd_dict, epd_summary
     '''
     list_epds = json.load(open(file))
     for epd in list_epds:
         for f in epd["MS1_pseudo_Spectra"]:
+            # fix typing
             f['snr'] = float(f['snr'])
             f['goodness_fitting'] = float(f['goodness_fitting'])
             f['peak_area'] = float(f['peak_area'])
             f['is_good_peak'] = check_good_peak(f, snr, shape)
             
-    return epd2featurelist(list_epds), get_feature2epd_dict(list_epds), get_epd_stats(list_epds)
+    return epd2featurelist(list_epds), get_feature2epd_dict(list_epds, mode), get_epd_stats(list_epds)
 
 
 def read_master_datasets_records(infile='r1_datasets_stats.tsv', sep='\t'):
@@ -194,7 +226,8 @@ def read_master_datasets_records(infile='r1_datasets_stats.tsv', sep='\t'):
     returns
     dict of namedTuples
     '''
-    Dataset = namedtuple('Dataset', ['feature_table_id',
+    Dataset = namedtuple('Dataset', ['dataset_id_int',
+                                     'feature_table_id',
                                     'mode',
                                     'chromatography',
                                     'num_samples',
@@ -206,10 +239,11 @@ def read_master_datasets_records(infile='r1_datasets_stats.tsv', sep='\t'):
                                     'num_good_khipus',
                                     'num_singletons',
                                     'mz_calibration_ratio',
-                                    'num_features_matched_csm'])
+                                    'num_csm_matched'])
     d = {}
     for dts in map(Dataset._make, csv.reader(open(infile, "r"), delimiter=sep)):
         d[dts.feature_table_id] = dts
+    _ = d.pop('feature_table_id') # remove header item
     return d
 
 
@@ -683,9 +717,10 @@ def get_isopairs_good_khipus(list_empCpds, natural_ratio_limit=0.5):
         if M0 and M1:
             if float(M1['representative_intensity'])/(1 + float(M0['representative_intensity'])) < natural_ratio_limit:
                 isopair_empCpds_ids.append( epd['interim_id'] )
-                if epd["MS1_pseudo_Spectra"][0]['is_good_peak']:
+                # if epd["MS1_pseudo_Spectra"][0]['is_good_peak']: 
+                if M0['is_good_peak']: # not assuming first feature
                     good_khipus.append( epd )
-                    isopair_mtracks.append( epd["MS1_pseudo_Spectra"][0]['parent_masstrack_id'] )
+                    isopair_mtracks.append( M0['parent_masstrack_id'] )
 
     return isopair_empCpds_ids, len(set(isopair_mtracks)), good_khipus
     
@@ -693,7 +728,6 @@ def get_isopairs_good_khipus(list_empCpds, natural_ratio_limit=0.5):
 def count_singletons(list_empCpds):
     return len([epd for epd in list_empCpds if len(epd['MS1_pseudo_Spectra'])==1])
     
-
     
 def get_isopair_features(full_list_empCpds, isopair_empCpds):
     '''
