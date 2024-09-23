@@ -3,9 +3,10 @@ pre-annotation algorithms implemented in class cmTrack.
 How to get ion annotations from many source datasets by popular votes.
 '''
 import pickle
+from itertools import permutations
 import numpy as np
 
-# from .mining import primary_ions_pos, primary_ions_neg
+# from mining import primary_ions_pos_ordered, primary_ions_neg_ordered
 
 def no_tie_int_median(a):
     '''
@@ -265,6 +266,8 @@ class cmRegistry:
         '''
         return list_csm_features
         
+        Including member raw features and inferred neutral mass.
+        
         Ranked by RT now; 
         will add ranking by intensity orders and other methods later.
         Since the votes are limited to conformed mass tracks, not a major concern.
@@ -306,8 +309,10 @@ class cmRegistry:
             list_csm_features[ii]['members'] = [self.get_short_feature_tuple(x) for x in members]
             list_csm_features[ii]['voted_ion_relation'] = ion
             list_csm_features[ii]['votes'] = count
+            list_csm_features[ii]['neutral_mass'] = self.summarize_neutral_mass(members, voted_ion=ion)
+            
             list_csm_features[ii]['id'] = self.id + '_' + chromatography + '_' + str(ii)
-
+            
         return list_csm_features
 
     def summarize_ions(self, features):
@@ -341,7 +346,19 @@ class cmRegistry:
         
         return _d
 
-
+    def summarize_neutral_mass(self, features, voted_ion):
+        '''
+        Enforceing voted_ion since there can be discrepency btw median and voted ions.
+        '''
+        all = [x['neutral_formula_mass'] 
+                          for x in features if x['neutral_formula_mass'] 
+                          and x['ion_relation']==voted_ion
+                          ]
+        if all:
+            return np.median(all)
+        else:
+            return None
+        
     def get_short_feature_tuple(self, x):
         '''
         returns ('dataset_id', 'int_id', 'mz', 'rtime', 'snr')
@@ -358,30 +375,192 @@ class cmRegistry:
 
 
 
-
-
 class neutralMassRegistry:
     '''
     A unit for a specific neutral mass to include
-    a) various features in expt observations
-    b) list of theoretical compounds of this molecular weight
-    c) mapping algorithm to assign annotations.
-    
+    a) experimental observations by methods, e.g. [neg_RP, neg_HILIC, pos_RP, pos_HILIC, GCMS, MSMS]
+    Each LC method may have multiple csm_features.
+    b) organization of csm_features to csm_emp_cpds.
+    c) list of theoretical compounds of this molecular weight (annotation by previous database or literature).
+    d) user supplied annotation from metabolomics datasets.
+    e) algorithm to assign annotations.
     
     '''
-    def __init__(self):
-        self.neutral_mass = None
-        self.list_methods = []
-        self.list_theoretical_cpds = []     # from database records
-        self.list_CSM_cpds = []        # in CSM
-        self.list_empCpds = []          # from user expt data to be annotated
-        self.from_user_libraries = []
-        self.assembled_data = {}
-        self.annotation = {}            # dict for each empCpd
+    def __init__(self, 
+                 id, 
+                 mass, 
+                 primary_ions = ['M0,M+H+',
+                                'M0,Na/H',
+                                'M0,M+H+, 2x charged',
+                                'M0,Na/H, 2x charged',
+                                'M0,M+H+, 3x charged',
+                                'M0,Na/H, 3x charged',
+                                'M0,M-H-',
+                                'M0,M-H-, 2x charged',
+                                'M0,M-H-, 3x charged']
+                 ):
+        self.id = id
+        self.neutral_mass = mass
+        self.primary_ions = primary_ions
+        self.data_by_method = {}            # assembled data here
         
-    def assemble_data(self, ):
-        pass
-    
+        # self.csm_features = {}              # details of each csm_feature as dict
+        self.list_theoretical_cpds = []     # from database records
+        self.empcpd_annotation = {}            # dict for each empCpd
+        
+    def assemble_lcms_data(self, 
+                      list_csm_features, 
+                      dict_csm_fatures, 
+                      dict_feature_relations,
+                      expt_methods=['neg_RP', 'neg_HILIC', 'pos_RP', 'pos_HILIC'],
+                      ):
+        '''
+        Updates self.data_by_method.
+        
+                'csm_features': [['r1_neg_415.099438_HILIC_1', 'M0,M-H-'],
+                ['r1_neg_415.099438_RP_0', 'M0,M-H-'],
+                ['r1_neg_415.099438_RP_1', 'M0,M-H-'],
+                ['r1_neg_415.099438_RP_2', 'M0,M-H-'],
+                ['r1_neg_416.102796_RP_3', '13C/12C,M-H-'],
+                ['r1_neg_416.107064_HILIC_1', '13C/12C,M-H-']]
+        '''
+        data_by_method = self.organize_by_method(list_csm_features, expt_methods)
+        for k, v in data_by_method.items():
+            if v: # leave out empty lists
+                self.data_by_method[k] = self.organize_csm_epds(
+                                            v, dict_csm_fatures, dict_feature_relations)
+            
+    def organize_csm_epds(self, LL_csm_features, dict_csm_fatures, dict_feature_relations):
+        '''
+        Organize LL_csm_features in a single method into csm_empCpds.
+        A csm_empCpd is similar to empCpd but based on csm_features (meta features summarized from many datasets).
+        
+        1. Get relationship pairs btw all csm_features.
+        2. Determine which csm_features are primary, thus number of empCpds.
+        3. Return empCpds and any unassigned csm_features (not primary by definition).
+        
+        method: 
+        {
+            epds: [{'primary': ['r1_neg_415.099438_RP_0', 'M0,M-H-'],
+                    'others': [...],
+                }, ...],
+            unassigned: [...],
+        }
+        
+        '''
+        relationship_pairs  = []
+        for pair in permutations(LL_csm_features, 2):
+            if self.test_csm_features_belong(pair[0][0], pair[1][0], dict_csm_fatures, dict_feature_relations):
+                relationship_pairs.append(pair)
+        
+        # can be used for diagnosis
+        self.relationship_pairs = relationship_pairs
+        # separate primary from secondary
+        children = [x[1][0] for x in relationship_pairs]       # possible x -> y -> z, y is garanteed as child not paren
+        primary = [x for x in LL_csm_features if x[1] in self.primary_ions and x[0] not in children]
+                    
+        epds, assigned = [], []
+        for f in primary:
+            matched_children = [pair[1][0] for pair in relationship_pairs if pair[0][0]==f[0]]
+            matched_children_level2 = [pair[1][0] for pair in relationship_pairs if pair[0][0] in matched_children]
+            mm = matched_children + matched_children_level2
+            assigned += mm + [f[0]]
+            epds.append(
+                {
+                    'primary': f,
+                    'others': [x for x in LL_csm_features if x[0] in mm],
+                }
+            )
+        unassigned = [x for x in LL_csm_features if x[0] not in assigned]
+        return {
+            'epds': epds,
+            'unassigned': unassigned,
+        }
+        
+    def summarize(self):
+        '''
+        Summarize info to export.
+        GC-MS and MS/MS data are not handled here, but outside in current process.
+        '''
+        num_epds, num_epds_withkhipu = self.count_epd_khipus()
+        
+        return {
+            'id': self.id,
+            'mass': self.neutral_mass,
+            'num_epds': num_epds,
+            'num_epds_withkhipu': num_epds_withkhipu,
+            'Methods': self.data_by_method,   
+        }
+        
+    def count_epd_khipus(self):
+        '''
+        Report how many csm_epds and how many with khipus 
+        '''
+        num_epds, num_epds_withkhipu = 0, 0
+        for k,v in self.data_by_method.items():
+            for epd in v['epds']:
+                num_epds += 1
+                if len(epd['others']) > 0:  # valid khipu
+                    num_epds_withkhipu += 1
+                    
+        return num_epds, num_epds_withkhipu
+        
+        
+        
+    def test_csm_features_belong(self, csmf, csmf2, dict_csm_fatures, dict_feature_relations):
+        '''
+        Test if csmf2 belong to csmf's compound.
+        csmf1, csmf2 : 'r1_neg_415.099438_RP_0', 'r1_neg_416.102796_RP_3'
+        If a primary feature in one csmf points to another, get a relationship.
+        '''
+        members = [(x[0], x[1]) for x in dict_csm_fatures[csmf]['members']]
+        return set(members).intersection(self.get_parents_of_memberfeatures(
+                dict_csm_fatures[csmf2]['members'], dict_feature_relations)
+        )      
+        
+        
+    def get_parents_of_memberfeatures(self, members, dict_feature_relations):
+        '''
+         'members': [[961, 'F46351', 415.1015, 431.23, 59.0],
+            [850, 'F109715', 415.0989, 301.31, 30.0],
+            [801, 'F56009', 415.0992, 318.63, 13.0]],
+            
+        dict_feature_relations : {(464, 'F535'): (464, 'F88'),
+            (464, 'F536'): (464, 'F89'),
+            (2, 'F693'): (2, 'F17')}
+        '''
+        r = [dict_feature_relations.get((m[0], m[1]), None) for m in members]
+        return set([x for x in r if x])
+
+        
+    def organize_by_method(self, list_csm_features, expt_methods):
+        '''
+        Hardcoded in csm_features ID for now.
+        expt_methods=['neg_RP', 'neg_HILIC', 'pos_RP', 'pos_HILIC']
+        '''
+        def assign(feature_id_str, expt_methods):
+            segments = feature_id_str.split('_')
+            matched = None
+            for _m in expt_methods:
+                method_keywords = _m.split('_')
+                # checking two keywords only here
+                if method_keywords[0] in segments and method_keywords[1] in segments:
+                    matched = _m
+            if not matched:
+                print("No method match: ", feature_id_str)
+            return matched
+        
+        d = {}
+        for md in expt_methods:
+            d[md] = []
+        for f in list_csm_features:
+            _m = assign(f[0], expt_methods)
+            if _m:
+                d[_m].append(f)
+        return d
+        
+        
+        
     def get_match_user_libraries(self, user_libraries):
         for LL in user_libraries:
             self.from_user_libraries.append(

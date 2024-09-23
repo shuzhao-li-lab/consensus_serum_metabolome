@@ -349,6 +349,39 @@ def export_json_consensus_vtracks(summary_tally, dataset_dict, outfile='vTracks_
 # khipu needs update on better calculation of multi-charged ions. But this is a start:
 #
 
+def build_consensus_masslist(List1, List2, ppm=1):
+    '''
+    To build a list of consensus mass values from two input lists.
+    Redundance is expected within and in between lists. 
+    
+    example input:
+        [('r1_pos_191.04317_RP_1', 168.05387000000002),
+        ('r1_pos_191.044982_HILIC_0', 168.055682),
+        ('r1_pos_191.044982_RP_0', 168.055682),
+        ('r1_pos_191.048392_HILIC_0', 190.041112),
+        ('r1_pos_191.048392_RP_0', 190.041112),
+        ('r1_pos_191.053244_RP_0', 168.063944)]
+    returns
+        Unique list of mass values, and corresponding input feature IDs. 
+        
+    ref: asari.mass_functions.bin_by_median
+    '''
+    def tol(x, ppm=ppm):
+        return x * 0.000001 * ppm
+    
+    List_of_tuples = sorted([(x[1], x[0]) for x in List1 + List2])
+    
+    new = [[List_of_tuples[0], ], ]
+    for X in List_of_tuples[1:]:
+        if X[0]-np.median([ii[0] for ii in new[-1]]) < tol(X[0]):       
+            # median moving with list change
+            new[-1].append(X)
+        else:
+            new.append([X])
+    
+    return new
+
+
 def calculate_neutral_mass_pos(mz, ion):
     '''
     ion in ['M0,Na/H', 'M0,M+H+', 'M0,M+H+, 2x charged', 'M0,Na/H, 2x charged', 
