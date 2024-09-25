@@ -107,6 +107,31 @@ def read_table_to_json(file, sep='\t'):
         
     return LL
 
+def parse_msp_to_listdict(file, field_separator=': ', return_peaks=False):
+    '''
+    parse a msp file within reasonable size.
+    return list of dictionaries, [{key, value pairs}, ...]
+    '''
+    features = []
+    w = open(file).read().rstrip().split('\n\n')
+    for block in w:
+        d = {}
+        lines = block.splitlines()
+        data = []
+        for line in lines:
+            if field_separator in line:
+                x = line.split(field_separator)
+                d[x[0]] = x[1]
+            elif line.strip():
+                data.append(line.split())
+        if return_peaks:
+            try:
+                d['peaks'] = [(float(x[0]), float(x[1])) for x in data]
+            except(TypeError):
+                print("Failed to convert peaks: ", block)
+        features.append(d)
+        
+    return features
 
 def archive_expt_features(short_name, num_samples, mass_accuracy_ratio, list_features, outdir):
     '''
