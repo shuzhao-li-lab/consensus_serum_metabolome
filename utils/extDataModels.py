@@ -12,20 +12,20 @@ def no_tie_int_median(a):
     '''
     Parameter a : input as a list, not array.
     Used to get consensus number of features on a mass registry. We don't want tied median here.
-    Returns the value above median if len(a) is even.
-    np.percentile changed argument, not to use to avoid version confusion.
+    Returns the value above median if len(a) is even; force int.
     
     Note :
-    isinstance(m, int) doesn't work. 
-    This requires checking odd or even number as len(a), since even number can return an integer too.
+    1. np.percentile changed argument, not to use to avoid version confusion.
+    2. isinstance(m, int) doesn't work. This requires checking odd or even number as len(a), 
+    since even number can return an integer too.
     '''
     if len(a) % 2 == 0: # even number
-        return np.median( [-1] + a )
+        return int(np.median( [-1] + a ))
     else :
-        return np.median(a)
+        return int(np.median(a))
 
 
-class ext_Dataset:
+class extended_Dataset:
     '''
     # Placeholder, a conceptual class for a dataset.
     See mining.read_master_datasets_records to get a dict of namedTuples for this purpose.
@@ -101,6 +101,7 @@ class cmRegistry:
         self.numb_good_features = len(self.good_features)
         self.dict_datasets = {} # separate data by methods
         self.dict_summary = {}
+        self.dict_csmf_members = {}
         
     def summarize_features(self, datasets_meta_dict, concise=False):
         '''
@@ -157,9 +158,9 @@ class cmRegistry:
         Use good features only.
         '''
         for c in self.chromatography_types:
-            self.dict_summary[c] = self.make_concise_mr(
-                self.analyze_group_features(c, self.dict_datasets[c]), concise
-                                   )
+            group_dict, dict_csmf_members = self.analyze_group_features(c, self.dict_datasets[c])
+            self.dict_csmf_members.update(dict_csmf_members)
+            self.dict_summary[c] = self.make_concise_mr( group_dict, concise )
         
         
     def make_concise_mr(self, d, concise):
@@ -216,45 +217,59 @@ class cmRegistry:
     def analyze_group_features(self, chromatography, datasets):
         '''
         datasets : dict of dataset_id to features, in a single method
+        
+            # list_good_features can be 100s to 1000s
+            #for fl in datasets.values():
+            #    new['list_good_features'] += [(x['mz'], x['rtime'], x['snr'], x['dataset_id']) for x in fl]
+            # datasets[representative]
+            
+        dict_csmf_members : Plan to store members outside pos/neg_mass_registries.json, too bulky. 
+        
         '''
         new = {'chromatography': chromatography,
                'mode': self.mode,
-               # 'list_good_features': [], 
-               'list_csm_features': [],  # containing supporting features now
-               'representative': None,
                'median_feature_number': None,
                'number_studies': None,
                'number_datasets': None,
+               'representative': None,
+               # 'list_good_features': [], 
+               'list_csm_features': [],  # containing supporting features now
                }
+        dict_csmf_members = {}
+        
         if datasets:
             dataset_ids = list(datasets.keys())
             study_ids = set([x.split('_')[0] for x in dataset_ids])     # assuming id format 'MTBLS136_RPpos_B9_ppm5_359148'
             new['number_studies'] = len(study_ids)
             new['number_datasets'] = len(dataset_ids)
-            
-            # list_good_features can be 100s to 1000s
-            #for fl in datasets.values():
-            #    new['list_good_features'] += [(x['mz'], x['rtime'], x['snr'], x['dataset_id']) for x in fl]
-            
+ 
             median_feature_number = no_tie_int_median([len(v) for v in datasets.values()])
-            conformed_datasets_ids = [k for k,v in datasets.items() if len(v)==median_feature_number]
-            representative = self.get_representative_dataset(conformed_datasets_ids, datasets)
-            new['representative'] = representative
-            new['representative_mass_track'] = []
             new['median_feature_number'] = median_feature_number
-            # determine consensus features by popular votes
-            list_csm_features = self.vote_consensus_features(
-                datasets[representative], [datasets[ii] for ii in conformed_datasets_ids], chromatography
+            conformed_datasets_ids = [k for k,v in datasets.items() if len(v)==median_feature_number]
+            
+            # determine consensus features by popular votes; 
+            list_csm_features, dict_csmf_members = self.vote_consensus_features(
+                median_feature_number, [datasets[ii] for ii in conformed_datasets_ids], chromatography
             )
             new['list_csm_features'] = list_csm_features
+            
+            new['representative'] = self.get_representative_dataset(conformed_datasets_ids, datasets)
+            new['representative_mass_track'] = []
+            
         else:  
             print(self.id, datasets)
             
-        return new
+        return new, dict_csmf_members
         
     def get_representative_dataset(self, conformed_datasets_ids, datasets):
         '''
         Get representative dataset with best ave SNR. Only from datasets with consensus number of features.
+        
+        # Not showing representative_feature anymore; relevant info in representative_mass_track
+        for feature in representative_dataset:
+            list_csm_features.append(
+                {'representative_feature' : feature}
+            )
         '''
         ave_snrs = [
             np.mean([x['snr'] for x in datasets[ii]]) for ii in conformed_datasets_ids
@@ -262,13 +277,13 @@ class cmRegistry:
         idx = np.argmax(ave_snrs)
         return conformed_datasets_ids[idx]
 
-    def vote_consensus_features(self, representative_dataset, list_datasets, chromatography):
+    def vote_consensus_features(self, median_feature_number, conformed_datasets, chromatography):
         '''
-        return list_csm_features
+        return list_csm_features, dict_csmf_members 
         
         Including member raw features and inferred neutral mass.
         
-        Ranked by RT now; 
+        Ordered by RT now; 
         will add ranking by intensity orders and other methods later.
         Since the votes are limited to conformed mass tracks, not a major concern.
         
@@ -291,29 +306,31 @@ class cmRegistry:
                 return r[0]
             
         list_csm_features = []
-        N = len(representative_dataset)
+        dict_csmf_members = {}
+        N = median_feature_number       #len(representative_dataset)
         # use up to N best (snr) features per dataset
-        for feature in representative_dataset:
-            list_csm_features.append(
-                {'representative_feature' : feature}
-            )
+        for ii in range(N):
+            list_csm_features.append({})
             
         selected_features = []
         # conformed_datasets have same N
-        for dataset in list_datasets:
+        for dataset in conformed_datasets:
             selected_features.append(get_top_N_features(dataset, N))
                 
         for ii in range(N):
+            _fid_ = self.id + '_' + chromatography + '_' + str(ii)
             members = [x[ii] for x in selected_features]
             count, ion = get_voted_ion(members)
-            list_csm_features[ii]['members'] = [self.get_short_feature_tuple(x) for x in members]
+            list_csm_features[ii]['id'] = _fid_
             list_csm_features[ii]['voted_ion_relation'] = ion
             list_csm_features[ii]['votes'] = count
             list_csm_features[ii]['neutral_mass'] = self.summarize_neutral_mass(members, voted_ion=ion)
+            list_csm_features[ii]['num_members'] = len(conformed_datasets)
             
-            list_csm_features[ii]['id'] = self.id + '_' + chromatography + '_' + str(ii)
+            # should save separately as members are many
+            dict_csmf_members[_fid_] = [self.get_short_feature_tuple(x) for x in members]
             
-        return list_csm_features
+        return list_csm_features, dict_csmf_members
 
     def summarize_ions(self, features):
         '''
@@ -504,7 +521,6 @@ class neutralMassRegistry:
                     num_epds_withkhipu += 1
                     
         return num_epds, num_epds_withkhipu
-        
         
         
     def test_csm_features_belong(self, csmf, csmf2, dict_csm_fatures, dict_feature_relations):
