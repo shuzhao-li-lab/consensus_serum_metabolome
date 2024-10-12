@@ -685,6 +685,53 @@ def custom_export_peak_annotation(dict_empCpds, kcd_instance, export_file_name):
     print("\nAnnotation of %d Empirical compounds was written to %s.\n\n" %(len(dict_empCpds), export_file_name))
 
 
+def extract_userAnnotation(indir, infile, 
+                           dict_datasets_int_id,
+                           dict_f2csmf,
+                           ):
+    '''
+    infile : JSON file annotation to a raw feature.
+    e.g.     "F4730": {
+                    "name": "3-phenylpropionate (hydrocinnamate)",
+                    "id": "3-phenylpropionate (hydrocinnamate)",
+                    "platform": "LC/MS Neg",
+                    "mz": 149.0608,
+                    "ri": 2860.0,
+                    "rtime": 2860.0,
+                    "superclass": "Xenobiotics",
+                    "subclass": "Benzoate Metabolism",
+                    "cas": null,
+                    "pubchem": "107",
+                    "hmdb": "HMDB00764",
+                    "kegg": "C05629",
+                    "monoisotopic_mass": 150.068079564
+                },
+    
+    returns {csmf: [(study_id, cpd_dict), (), ...]}
+    
+    '''
+    new = {}
+    _int_id_ = dict_datasets_int_id[infile.split('.')[0]]
+    dict_anno = json.load(open(os.path.join(indir, infile)))
+    for k,v in dict_anno.items():
+        _k_ = str(_int_id_) + '_' + k
+        matched_csmf = dict_f2csmf.get(_k_)
+        if matched_csmf:
+            if matched_csmf in new:
+                new[matched_csmf].append(
+                    (_int_id_, v)
+                )
+            else:
+                new[matched_csmf] = [(_int_id_, v)]
+    print(
+        "Number of annotated raw features: ", len(dict_anno), 
+        "\n",
+        "Number of annotated CSM features: ", len(new)
+    )
+    return new
+
+
+
 #
 # Get empCpds by filtering 13C/12C pattern
 #

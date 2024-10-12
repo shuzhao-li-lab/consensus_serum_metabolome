@@ -166,33 +166,6 @@ class cmRegistry:
     def make_concise_mr(self, d, concise):
         '''
         Get a concise version of list of epds. Not in use now.
-        Input is like:
-        {'chromatography': 'HILIC',
-                    'mode': 'pos',
-                    'list_empCpds': [{'representative_feature': {'id': 'F1151',
-                                    'rtime': 73.55,
-                                    'is_good_peak': True,
-                                    'snr': 3407.0,
-                                    'dataset_id': 'ST001004_HILICpos_HILICpos_batch2_ppm5_361020',
-                                    'parent_epd_id': 'kp11_85.0526',
-                                    'neutral_formula_mass': 85.05264603323,
-                                    'ion_relation': '13C/12C,M+H+'},
-                                    'ion_relation': '13C/12C,M+H+',
-                                    'ion_count': 41,
-                                    'id': 'r1_pos_87.063389_epd_0'},
-                                {'representative_feature': {'id': 'F1145',
-                                    'rtime': 3.12,
-                                    'is_good_peak': True,
-                                    'snr': 25.0,
-                                    'dataset_id': 'ST001004_HILICpos_HILICpos_batch2_ppm5_361020',
-                                    'parent_epd_id': '_singleton_5461',
-                                    'neutral_formula_mass': None,
-                                    'ion_relation': ''},
-                                    'ion_relation': '13C/12C,M+H+',
-                                    'ion_count': 42,
-                                    'id': 'r1_pos_87.063389_epd_1'}],
-                    'representative': 'ST001004_HILICpos_HILICpos_batch2_ppm5_361020',
-                    'median_feature_number': 2}
         '''
         def shrink_epd(epd):
             return {
@@ -587,9 +560,13 @@ class neutralMassRegistry:
         
         pass
         
-    def map_annotation(self):
+    def map_annotation(self, list_empCpds, method='pos_HILIC'):
         '''
-        Mapping experimental data to annotation.
+        Mapping user experimental data to annotation.
+        
+        
+        
+        
         Rationale:
         1. if only one empCpd from user expt and only one theoretical_cpd, treat as a match.
            If ionization is mismatch, lower confidence.
@@ -602,19 +579,20 @@ class neutralMassRegistry:
         '''
         result = {}
         if len(self.list_theoretical_cpds) == 0:
-            for x in self.list_empCpds:
+            for x in list_empCpds:
                     result[x['interim_id']] = {
                     'best': None,
                     'others': []
                     }
         else:
-            if len(self.list_empCpds) == 1:
+            if len(list_empCpds) == 1:
                 
                 if len(self.list_theoretical_cpds) == 1:
                     result[self.list_empCpds[0]['interim_id']] = {
                         'best': self.list_theoretical_cpds[0],
                         'others': []
                     }
+                    
                 else:
                     # pick best 
                     _best = self.top_cpd_by_blood_conc(self.list_theoretical_cpds)
