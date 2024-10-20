@@ -1,9 +1,10 @@
 # Consensus Serum Metabolome
 
-Releases of the consensus metabolome for human serum/plasma, and support code for publication.
+A human Consensus Serum Metabolome (CSM) based on large-scale mining of public metabolomics data. 
 
-The current release is under `releases/`.
+The CSM data R1 are now released under `releases/`.
 
-Jupyter notebooks used for the publication are under `notebooks/`.
+Supporting code is open but not ready for production. The preprint and webtool are scheduled to release in mid-November.
 
+Jupyter notebooks used for the publication will be under `notebooks/`.
 
