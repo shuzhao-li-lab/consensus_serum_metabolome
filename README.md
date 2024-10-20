@@ -2,7 +2,7 @@
 
 A human Consensus Serum Metabolome (CSM) based on large-scale mining of public metabolomics data. 
 
-The CSM data R1 are now released under `releases/`.
+The CSM data R1 are now released (at sidebar, or https://github.com/shuzhao-li-lab/consensus_serum_metabolome/releases). 
 
 ## To come
 
