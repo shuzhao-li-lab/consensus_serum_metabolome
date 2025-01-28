@@ -29,6 +29,9 @@ class extended_Dataset:
     '''
     # Placeholder, a conceptual class for a dataset.
     See mining.read_master_datasets_records to get a dict of namedTuples for this purpose.
+    
+    Will use for RT recalibration.
+    Signature_peaks : 12C features with verified 13C counterpart.
         
     desired:
         'feature_table_id',
@@ -64,7 +67,24 @@ class extended_Dataset:
     def export_json(self):
         pass
     
-    
+    def compute_rti(self, RTI_reference):
+        '''
+        Calculating retention time index by calibration to RTI_reference
+        '''
+        
+        
+        return {}
+
+
+
+
+
+
+
+
+
+
+
 class cmRegistry:
     '''
     A consensus mass registry from large-scale data mining.
@@ -375,6 +395,9 @@ class neutralMassRegistry:
     d) user supplied annotation from metabolomics datasets.
     e) algorithm to assign annotations.
     
+    We use a single list of primary_ions here.
+    In some results, multiple primary entries are seen together. 
+    They can still belong to the same epds, but no connection was made in the same datasets.
     '''
     def __init__(self, 
                  id, 
@@ -429,6 +452,9 @@ class neutralMassRegistry:
         2. Determine which csm_features are primary, thus number of empCpds.
         3. Return empCpds and any unassigned csm_features (not primary by definition).
         
+        'csm_features': [['r1_neg_237.078691_HILIC_0', 'M0,M-H-'],
+                        ['r1_neg_237.078691_RP_0', 'M0,M-H-']]
+  
         method: 
         {
             epds: [{'primary': ['r1_neg_415.099438_RP_0', 'M0,M-H-'],
@@ -446,7 +472,8 @@ class neutralMassRegistry:
         # can be used for diagnosis
         self.relationship_pairs = relationship_pairs
         # separate primary from secondary
-        children = [x[1][0] for x in relationship_pairs]       # possible x -> y -> z, y is garanteed as child not paren
+        children = [x[1][0] for x in relationship_pairs]       # possible x -> y -> z, y is garanteed as child not parent
+        # This establishes primary csm_features
         primary = [x for x in LL_csm_features if x[1] in self.primary_ions and x[0] not in children]
                     
         epds, assigned = [], []
@@ -466,6 +493,10 @@ class neutralMassRegistry:
             'epds': epds,
             'unassigned': unassigned,
         }
+        
+        
+        
+        
         
     def summarize(self):
         '''

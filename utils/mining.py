@@ -44,7 +44,7 @@ def read_features_from_asari_table(text_table,
     '''
     Read a feature table from asari result.
     Returns
-    List of peaks.
+    num_samples, List of peaks.
     '''
     featureLines = text_table.splitlines()
     header = featureLines[0].split(delimiter)
