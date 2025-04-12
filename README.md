@@ -6,6 +6,6 @@ The CSM data R1 are now released (at sidebar, or https://github.com/shuzhao-li-l
 
 ## To come
 
-Supporting code is open but not ready for production. The preprint and webtool are scheduled to release in mid-November.
+Supporting code is open but not ready for production. The preprint and web tool are scheduled to release soon.
 
 Jupyter notebooks used for the publication will be under `notebooks/`.

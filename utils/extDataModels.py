@@ -6,8 +6,6 @@ import pickle
 from itertools import permutations
 import numpy as np
 
-# from mining import primary_ions_pos_ordered, primary_ions_neg_ordered
-
 def no_tie_int_median(a):
     '''
     Parameter a : input as a list, not array.
@@ -23,67 +21,6 @@ def no_tie_int_median(a):
         return int(np.median( [-1] + a ))
     else :
         return int(np.median(a))
-
-
-class extended_Dataset:
-    '''
-    # Placeholder, a conceptual class for a dataset.
-    See mining.read_master_datasets_records to get a dict of namedTuples for this purpose.
-    
-    Will use for RT recalibration.
-    Signature_peaks : 12C features with verified 13C counterpart.
-        
-    desired:
-        'feature_table_id',
-        'mode',
-        'chromatography',
-        'num_samples',
-        'num_features',
-        'num_good_features',
-        'mz_calibration_ratio',
-        'num_empcpds',
-        'num_khipus_isopairs',
-        'num_isopair_mtracks',
-        'num_good_khipus',
-        'num_singletons',
-        'good_khipus',
-        'num_features_matched_csm'
-    '''
-    def __init__(self):
-        id = ''
-        feature_table_id = ''
-        mode = 'pos'   # or 'neg'
-        chromatography = 'HILIC'   # or 'RP' etc
-        
-        num_samples = 0
-        num_features = 0
-        num_good_features = 0   # defined by e.g. SNR > 5, goodness_fitting > 0.9
-        mz_calibration_ratio = 0
-        
-        num_khipus = 0
-        num_khipus_isopairs = 0
-        num_singletons = 0
-        
-    def export_json(self):
-        pass
-    
-    def compute_rti(self, RTI_reference):
-        '''
-        Calculating retention time index by calibration to RTI_reference
-        '''
-        
-        
-        return {}
-
-
-
-
-
-
-
-
-
-
 
 class cmRegistry:
     '''
@@ -384,7 +321,6 @@ class cmRegistry:
         return self.dict_summary
 
 
-
 class neutralMassRegistry:
     '''
     A unit for a specific neutral mass to include
@@ -475,7 +411,7 @@ class neutralMassRegistry:
         children = [x[1][0] for x in relationship_pairs]       # possible x -> y -> z, y is garanteed as child not parent
         # This establishes primary csm_features
         primary = [x for x in LL_csm_features if x[1] in self.primary_ions and x[0] not in children]
-                    
+        
         epds, assigned = [], []
         for f in primary:
             matched_children = [pair[1][0] for pair in relationship_pairs if pair[0][0]==f[0]]
@@ -493,11 +429,7 @@ class neutralMassRegistry:
             'epds': epds,
             'unassigned': unassigned,
         }
-        
-        
-        
-        
-        
+   
     def summarize(self):
         '''
         Summarize info to export.
@@ -525,8 +457,7 @@ class neutralMassRegistry:
                     num_epds_withkhipu += 1
                     
         return num_epds, num_epds_withkhipu
-        
-        
+         
     def test_csm_features_belong(self, csmf, csmf2, dict_csm_fatures, dict_feature_relations):
         '''
         Test if csmf2 belong to csmf's compound.
@@ -537,7 +468,6 @@ class neutralMassRegistry:
         return set(members).intersection(self.get_parents_of_memberfeatures(
                 dict_csm_fatures[csmf2]['members'], dict_feature_relations)
         )      
-        
         
     def get_parents_of_memberfeatures(self, members, dict_feature_relations):
         '''
@@ -552,7 +482,6 @@ class neutralMassRegistry:
         r = [dict_feature_relations.get((m[0], m[1]), None) for m in members]
         return set([x for x in r if x])
 
-        
     def organize_by_method(self, list_csm_features, expt_methods):
         '''
         Hardcoded in csm_features ID for now.
@@ -579,8 +508,6 @@ class neutralMassRegistry:
                 d[_m].append(f)
         return d
         
-        
-        
     def get_match_user_libraries(self, user_libraries):
         for LL in user_libraries:
             self.from_user_libraries.append(
@@ -588,15 +515,247 @@ class neutralMassRegistry:
             )
     
     def get_match_from_a_library(self, library):
-        
         pass
         
-    def map_annotation(self, list_empCpds, method='pos_HILIC'):
+    def map_annotation(self, list_db_cpds, method='pos_HILIC'):
         '''
-        Mapping user experimental data to annotation.
+        Annotation of this neuMR by DB records. Placeholder.
+        Likely to be done at annoFactorGraph, associated with building reference CSMFs.
+        '''
+        # G = annoFactorGraph()
+        self.annotation_graph = []
+        
+    def map_annotation_singletons(self):
+        # with list of singleton features
+        # will rewrite
+        #
+        result = {}
+        for x in self.list_empCpds:
+            result[x['id']] = {
+            'best': None,
+            'others': self.list_theoretical_cpds
+            }
+        self.annotation = result
+    
+    def top_cpd_by_blood_conc(self, LL):
+        new = [x for x in LL if x['blood_conc']]
+        if new:
+            return sorted(new, key=lambda x: x['blood_conc'])[-1]
+        else:
+            return None
+        
+    def top_cpd_by_BloodPaperCount(self, LL):
+        new = [x for x in LL if 'BloodPaperCount' in x and x['BloodPaperCount']]
+        if new:
+            return sorted(new, key=lambda x: x['BloodPaperCount'])[-1]
+        else:
+            return None
+        
+    def rank_cpds_(self, LL):
+        '''
+        Prototype testing only
+        '''
+        new = [x for x in LL if x['blood_conc']]
+        others = [x for x in LL if not x['blood_conc']]
+        new2, others2 = [], []
+        for x in others: 
+            if 'BloodPaperCount' in x and x['BloodPaperCount']:
+                new2.append(x)
+            else:
+                others2.append(x)
+        
+        return sorted(new, reverse=True, key=lambda x: x['blood_conc']) + sorted(
+            new2, reverse=True, key=lambda x: x['BloodPaperCount']
+            ) + others2
+        
+    def rank_epds_by_intensity(self, LL, sort_key='peak_area'):
+        # key can be ppeak_area, snr etc
+        return sorted(LL, reverse=True, key=lambda x: sum([y[sort_key] for y in x['MS1_pseudo_Spectra']]))
+        
+    def export_json(self):
+        # self.dict_summary
+        return {
+            'list_theoretical_cpds': self.list_theoretical_cpds,
+            'list_CSM_cpds': self.list_CSM_cpds,
+            'list_empCpds': self.list_empCpds,
+            'annotation': self.annotation,
+        }
+
+#
+# ----------------------------------------------
+# Prototyping, not in use yet
+# 
+
+class extended_Dataset:
+    '''
+    # Placeholder, a conceptual class for a dataset.
+    See mining.read_master_datasets_records to get a dict of namedTuples for this purpose.
+    
+    Will use for RT recalibration.
+    Signature_peaks : 12C features with verified 13C counterpart.
+        
+    desired:
+        'feature_table_id',
+        'mode',
+        'chromatography',
+        'num_samples',
+        'num_features',
+        'num_good_features',
+        'mz_calibration_ratio',
+        'num_empcpds',
+        'num_khipus_isopairs',
+        'num_isopair_mtracks',
+        'num_good_khipus',
+        'num_singletons',
+        'good_khipus',
+        'num_features_matched_csm'
+    '''
+    def __init__(self):
+        id = ''
+        feature_table_id = ''
+        mode = 'pos'   # or 'neg'
+        chromatography = 'HILIC'   # or 'RP' etc
+        
+        num_samples = 0
+        num_features = 0
+        num_good_features = 0   # defined by e.g. SNR > 5, goodness_fitting > 0.9
+        mz_calibration_ratio = 0
+        
+        num_khipus = 0
+        num_khipus_isopairs = 0
+        num_singletons = 0
+        
+    def export_json(self):
+        pass
+    
+    def compute_rti(self, RTI_reference):
+        '''
+        Calculating retention time index by calibration to RTI_reference
+        '''
+        pass
+
+
+class annoFactorGraph:
+    '''
+    Model annotation as a factor graph. Utility class to update annotation of reference CSMFs.
+    Since CSMFs are method specific, this should be run for each method.
+
+    Use CSMFs as observed variables {detection_frequency, elution order, }
+    Cpds, i.e. database metabolites, as domains {prior ID, known conc, publication_numbers, inferred elution order}
+    Goal is to establish relationships btw two types of nodes;
+    while the final annotation is delivered as multi-layered.
+    
+    DB = blood metabolite database
+    '''
+    def __init__(self, neu_mr, csmf_isomers_dict):
+        '''
+        Data model to build annotation per neutral mass registry, 
+        using a framework of factor graph.
+        This updates neuMR and all related CSMFs concurrently.
+         
+        neu_mr : matched neutral mass registry, which contains multiple MS methods and matched list_cpds.
+        csmf_isomers_dict : {method: list of CSMFs on the same mass track}
+
+        Within neu_mr, list_cpds : based on prior DB records, e.g. blood metabolite database. 
+        method : method for the csmf_isomers, e.g. 'hilic_pos'.
+        neuMR (neutral mass registry) is involved because the associated CSMFs look into other methods too.
+        '''
+        self.neu_mr = neu_mr
+        self.csmf_isomers_dict = csmf_isomers_dict
+        self.compile_cpd_records()
+        self.factor_graph_dict = {}
+        self.scored_annotation_dict = {}
+    
+    def run_all_methods(self):
+        '''
+        Placeholder
+        If method in neuMR
+        for method, csmfs in self.csmf_isomers_dict.items():
+            self.build_factor_graph(csmfs
+                                    )
+        '''
+        pass
+            
+    def compile_cpd_records(self):
+        '''
+        "MDB_records", "formula_matches" are included in neuMR fields.
+        
+        "annotation_reported" may not be populated now; should be updated from CSMFs. 
+        
+        '''
+        self.list_cpds = self.neu_mr["MDB_records"]  # as domains, add unknown too
+        # for k,v in self.neu_mr["User_annotations"].items(): 
+        #    if v not in self.list_cpds:
+        #       self.list_cpds += v
         
         
+    def build_factor_graph(self, method):
+        '''Initiate and update weight_matrix per method.        
+        0. Start with method specific CSMFs
+        1. Initiation. E.g. weight_cpds = [1, 1, 1, 1, 1] to each csmf; add unknown too
+        2. Add piror identification if any
+        3. Add other expt data, e.g. MS/MS, GC-MS, IM-MS
+        4. elution_order
+        5. Apply detection_frequency
+        6. normalize weight_matrix to 0~1 in the end.
+        '''
+        # initiate
+        weight_matrix = np.ones((n_cpds+1, n_csmfs+1))
         
+        pass
+    
+    def filter_prior_identification(self, weight_matrix):
+        '''
+        Add piror identification if any
+        Add other expt data, e.g. MS/MS, GC-MS, IM-MS
+        Updates weight_matrix
+        '''
+
+        pass
+    
+    def filter_elution_order(self, weight_matrix):
+        '''
+        Multiply by e for the elution order matched cpd
+        Updates weight_matrix
+        '''
+
+        pass
+    
+    def filter_detection_frequency(self, weight_matrix):
+        '''Updates weight_matrix
+        '''
+ 
+        pass
+    
+    def estimate_parameters(self):
+        '''
+        For future use, on statistical learning        
+        '''
+        pass
+    
+    def _test_(self, neu_mr, list_cpds):
+        '''
+        Example CSMF:
+              "r1_pos_382.271413_RP_0": {
+                "id": "r1_pos_382.271413_RP_0",
+                "ion": "M0,M+H+",
+                "neuMR": "r1_neu_381.264271",
+                "mz": 382.271413,
+                "rti": 609.06,
+                "number_isomers": 1,
+                "isomer_elution_order": 0,
+                "annotation_reported": "MDB0005276r1",
+                "MDB": [
+                "MDB0005276r1",
+                "MDB0017100r1"
+                ]
+            },
+        '''
+        pass
+    
+    def _map_(self):
+        '''
+        prototyping
         
         Rationale:
         1. if only one empCpd from user expt and only one theoretical_cpd, treat as a match.
@@ -607,6 +766,7 @@ class neutralMassRegistry:
            c) to be added/improved methods
            
         returns recommendation per empCpd
+        
         '''
         result = {}
         if len(self.list_theoretical_cpds) == 0:
@@ -668,64 +828,6 @@ class neutralMassRegistry:
                             }
                         
         self.annotation = result
-    
-    def map_annotation_singletons(self):
-        # with list of singleton features
-        # will rewrite
-        #
-        result = {}
-        for x in self.list_empCpds:
-            result[x['id']] = {
-            'best': None,
-            'others': self.list_theoretical_cpds
-            }
-        self.annotation = result
-    
-    
-    def top_cpd_by_blood_conc(self, LL):
-        new = [x for x in LL if x['blood_conc']]
-        if new:
-            return sorted(new, key=lambda x: x['blood_conc'])[-1]
-        else:
-            return None
-        
-    def top_cpd_by_BloodPaperCount(self, LL):
-        new = [x for x in LL if 'BloodPaperCount' in x and x['BloodPaperCount']]
-        if new:
-            return sorted(new, key=lambda x: x['BloodPaperCount'])[-1]
-        else:
-            return None
-        
-    def rank_cpds_(self, LL):
-        new = [x for x in LL if x['blood_conc']]
-        others = [x for x in LL if not x['blood_conc']]
-        new2, others2 = [], []
-        for x in others: 
-            if 'BloodPaperCount' in x and x['BloodPaperCount']:
-                new2.append(x)
-            else:
-                others2.append(x)
-        
-        return sorted(new, reverse=True, key=lambda x: x['blood_conc']) + sorted(
-            new2, reverse=True, key=lambda x: x['BloodPaperCount']
-            ) + others2
-        
-    def rank_epds_by_intensity(self, LL, sort_key='peak_area'):
-        # key can be ppeak_area, snr etc
-        return sorted(LL, reverse=True, key=lambda x: sum([y[sort_key] for y in x['MS1_pseudo_Spectra']]))
-        
-        
-        
-    def export_json(self):
-        # self.dict_summary
-        return {
-            'list_theoretical_cpds': self.list_theoretical_cpds,
-            'list_CSM_cpds': self.list_CSM_cpds,
-            'list_empCpds': self.list_empCpds,
-            'annotation': self.annotation,
-        }
-
-
 
 
 #

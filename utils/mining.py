@@ -6,16 +6,11 @@ from collections import namedtuple
 
 import numpy as np
 from scipy.signal import find_peaks 
-
-
 import statsmodels.api as sm
 
 from mass2chem.lib.formula_coordinate import formula_coordinate
-
 from jms.dbStructures import knownCompoundDatabase, ExperimentalEcpdDatabase
-
 from asari.tools import match_features as mf
-
 from asari.default_parameters import adduct_search_patterns, \
     adduct_search_patterns_neg, isotope_search_patterns, extended_adducts
 
@@ -29,6 +24,7 @@ primary_ions_neg_ordered = ["M0,M-H-",
                             "M0,M-H-, 3x charged"]
 primary_ions_pos = set(primary_ions_pos_ordered)
 primary_ions_neg = set(primary_ions_neg_ordered)
+primary_ions = set(primary_ions_pos_ordered + primary_ions_neg_ordered)
 
 
 #
@@ -188,7 +184,6 @@ def get_feature2epd_dict(list_epds, mode):
             }
     return _d
 
-
 def get_primary_epd_feature(epd, mode='pos'):
     '''
     Get feature ID of the primary ion in this epd.
@@ -209,7 +204,6 @@ def get_primary_epd_feature(epd, mode='pos'):
     else:
         return ''
     
-
 def get_epd_stats(list_epds, natural_ratio_limit=0.5):
     '''
     Get numbers of khipus and singletons, and isopairs and good khipus.
@@ -245,7 +239,6 @@ def epd2featurelist_from_file(file, mode='pos', snr=5, shape=0.9):
             
     return epd2featurelist(list_epds), get_feature2epd_dict(list_epds, mode), get_epd_stats(list_epds)
 
-
 def read_master_datasets_records(infile='r1_datasets_stats.tsv', sep='\t'):
     '''
     returns
@@ -271,7 +264,6 @@ def read_master_datasets_records(infile='r1_datasets_stats.tsv', sep='\t'):
     _ = d.pop('feature_table_id') # remove header item
     return d
 
-
 def short_vtrack_summary(d):
     # ['id', 'numb_good_features', 'median_numb_hilic_features_perdataset', 'median_num_rp_features_perdataset', 'num_all_features',
     # 'num_datasets', 'num_hilic_datasets', 'num_rp_datasets',  'num_studies', 'max_good_features_per_method',
@@ -295,8 +287,6 @@ def export_table_by_fields(summary_tally, fields, outfile='short_vtrack_summary_
         
     with open(outfile, 'w') as O:
         O.write(s)
-
-
 
 def export_json_consensus_vtracks(summary_tally, dataset_dict, outfile='vTracks_consensus_summary_pos_r1.json'):
     '''
@@ -366,8 +356,6 @@ def export_json_consensus_vtracks(summary_tally, dataset_dict, outfile='vTracks_
     with open(outfile, 'w', encoding='utf-8') as f:
         json.dump(new, f,  ensure_ascii=False, indent=2)  # cls=NpEncoder,
 
-
-
 #
 # Annotation related
 #
@@ -406,7 +394,6 @@ def build_consensus_masslist(List1, List2, ppm=1):
     
     return new
 
-
 def calculate_neutral_mass_pos(mz, ion):
     '''
     ion in ['M0,Na/H', 'M0,M+H+', 'M0,M+H+, 2x charged', 'M0,Na/H, 2x charged', 
@@ -426,7 +413,6 @@ def calculate_neutral_mass_pos(mz, ion):
         return (mz - 22.9893) * 3
     else:
         return None
-    
     
 def calculate_neutral_mass_neg(mz, ion):
     '''
@@ -449,7 +435,6 @@ def calculate_neutral_mass_neg(mz, ion):
     else:
         return None
     
-
 # mass calibration
 def custom_mz_calibrate(features, 
                         kcd_instance, 
@@ -479,7 +464,6 @@ def custom_mz_calibrate(features,
         print("Mass accuracy check is skipped, mass_accuracy_ratio computing unsuccessful.")
     
     return mass_accuracy_ratio, features
-    
 
 def features2cpds(features, 
                     mode='pos', mz_tolerance_ppm=5,
@@ -539,8 +523,6 @@ def custom_kcd_annotate(full_list_empCpds, kcd_instance,
     EED.extend_empCpd_annotation(kcd_instance)
 
     return EED.dict_empCpds
-
-
 
 def line2cpd_dict(header, line):
     a = line.split('\t')
@@ -625,7 +607,6 @@ def build_KCD_from_GEM(gem_json):
     
     return KCD_gem
 
-
 def custom_export_peak_annotation(dict_empCpds, kcd_instance, export_file_name):
     '''
     Export feature annotation to tab delimited tsv file, where interim_id is empCpd id; and JSON.
@@ -684,7 +665,6 @@ def custom_export_peak_annotation(dict_empCpds, kcd_instance, export_file_name):
         
     print("\nAnnotation of %d Empirical compounds was written to %s.\n\n" %(len(dict_empCpds), export_file_name))
 
-
 def extract_userAnnotation(indir, infile, 
                            dict_datasets_int_id,
                            dict_f2csmf,
@@ -730,8 +710,6 @@ def extract_userAnnotation(indir, infile,
     )
     return new
 
-
-
 #
 # Get empCpds by filtering 13C/12C pattern
 #
@@ -746,18 +724,22 @@ def get_feature_of_max_intensity(featureList):
     idx = np.argmax(ints)
     return featureList[idx]
 
-def get_M0(MS1_pseudo_Spectra):
+def get_M0(MS1_pseudo_Spectra, ion='M+H+'):
     '''returns M0 feature with highest representative_intensity.
-    Without verifying which ion form.'''
+    Without verifying which ion form for now.
+    ion for future use.
+    '''
     M0 = [f for f in MS1_pseudo_Spectra if f['isotope']=='M0']
     if M0:
         return get_feature_of_max_intensity(M0)
     else:
         return []
     
-def get_M1(MS1_pseudo_Spectra):
+def get_M1(MS1_pseudo_Spectra, ion='M+H+'):
     '''returns M+1 feature with highest representative_intensity.
-    Without verifying which ion form.'''
+    Without verifying which ion formfor now.
+    ion for future use.
+    '''
     M = [f for f in 
           MS1_pseudo_Spectra if f['isotope']=='13C/12C']
     if M:
@@ -776,7 +758,6 @@ def get_highest_13C(MS1_pseudo_Spectra):
     else:
         return []
 
-    
 def filter_khipus(list_empCpds, natural_ratio_limit=0.5):
     '''
     returns 
@@ -797,7 +778,6 @@ def filter_khipus(list_empCpds, natural_ratio_limit=0.5):
                 isopair_empCpds.append( epd['interim_id'] )
 
     return isopair_empCpds
-    
     
 def get_isopairs_good_khipus(list_empCpds, natural_ratio_limit=0.5):
     '''
@@ -829,10 +809,8 @@ def get_isopairs_good_khipus(list_empCpds, natural_ratio_limit=0.5):
 
     return isopair_empCpds_ids, len(set(isopair_mtracks)), good_khipus
     
-    
 def count_singletons(list_empCpds):
     return len([epd for epd in list_empCpds if len(epd['MS1_pseudo_Spectra'])==1])
-    
     
 def get_isopair_features(full_list_empCpds, isopair_empCpds):
     '''
@@ -844,8 +822,6 @@ def get_isopair_features(full_list_empCpds, isopair_empCpds):
             isopair_features += epd['MS1_pseudo_Spectra']
 
     return isopair_features
-    
-
 
 def compare(list1, list2, mz_ppm=5, rt_tolerance=1e9):
     '''compare matches and print unmatched in list1. 
@@ -875,7 +851,6 @@ def compare2(list1, list2, mz_ppm=5, rt_tolerance=1e9):
 #
 # KDE functions
 #
-
 def get_kde_peaks(x_kde_support, y_kde_density, 
                   height=0.5,
                   distance=10,
@@ -902,7 +877,6 @@ def get_kde_peaks(x_kde_support, y_kde_density,
                                     ) 
     real_apexes = [x_kde_support[ii] for ii in peaks]
     return list(zip(real_apexes, properties['peak_heights']))
-
 
 def extract_segment_kde_peaks(sorted_mz_values,
                                   distance=10, width=10, wlen=200,
@@ -946,7 +920,6 @@ def extract_segment_kde_peaks(sorted_mz_values,
 # --------------------------------------------------------------------------------
 # Similar functions below now in extDataModels
 #
-
 def summarize_ions(cfeature):
     '''
     returns dict of ions in a tally_consensus_feature
@@ -958,7 +931,6 @@ def summarize_ions(cfeature):
     _d.sort(reverse=True)
     
     return _d
-
 
 def summarize_vtrack(id_vtrack, vtrack, mode='pos', filtering=True):
     '''
@@ -1036,7 +1008,6 @@ def summarize_vtrack(id_vtrack, vtrack, mode='pos', filtering=True):
         'alternative_ion_list': alternative_ion_list,
     }
    
-
 def get_epds_determine_primary_track(vtrack, max_good_features_per_method, ions, mode):
     '''Determine if this is a primary track based on if the top ions contain any primary ion forms.
     Get matched best feature (highest SNR) to get neutral_formula_mass in its linked empCpd, each per ion form.
@@ -1077,5 +1048,3 @@ def get_epds_determine_primary_track(vtrack, max_good_features_per_method, ions,
     
     return primary_list, alternatives
     
-    
-
