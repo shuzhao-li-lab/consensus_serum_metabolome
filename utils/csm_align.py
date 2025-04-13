@@ -9,7 +9,6 @@ Primary features present in CSM. Regression to get RT dict.
 DB: blood_metabolites (DB_CPD_SERUM) should have inchikey and major DB identifiers.
 '''
 import json
-import csv
 import numpy as np
 from scipy.stats import linregress
 
@@ -19,17 +18,9 @@ import seaborn as sn
 from asari.tools import match_features as mf
 from mining import get_M0, get_M1
 
-
-def extract_12c_landmark_features(list_khipus, ion='M0,M+H+'):
-    '''
-    returns landmark_features by selecting ion type. 
-    '''
-    landmark_features = []
-    for k in list_khipus:
-        m0 = [f for f in k['MS1_pseudo_Spectra'] if f['ion_relation']==ion]
-        if m0:
-            landmark_features += m0
-    return landmark_features
+#
+# I/O and conversions
+#
 
 def get_primary_feature_from_a_khipu(khipu, primary_ions_ordered):
     '''
@@ -60,7 +51,6 @@ def get_primary_features_from_epds(infile_json,
     )
     return landmark_features, primary_features, singletons
 
-
 def get_all_features_from_epdlist(epdlist):
     '''
     This function is used when input data are read from JSON annotation, 
@@ -80,6 +70,18 @@ def get_all_features_from_epdlist(epdlist):
         else:
             khipu_featuress += features
     return khipu_featuress, singletons
+
+def extract_12c_landmark_features(list_khipus, ion='M0,M+H+'):
+    '''
+    Simple function returns landmark_features by selecting ion type. 
+    Function get_primary_features_from_epdlist applies intensity ratios.
+    '''
+    landmark_features = []
+    for k in list_khipus:
+        m0 = [f for f in k['MS1_pseudo_Spectra'] if f['ion_relation']==ion]
+        if m0:
+            landmark_features += m0
+    return landmark_features
 
 def get_primary_features_from_epdlist(epdlist, 
                                    natural_ratio_limit=0.5, 
@@ -172,6 +174,10 @@ def convert_csmfs2tracks(csmfs):
         track['members'] = d[track['id']]
     return tracks, d
 
+#
+# CSMF reference based alignment and annotation
+#
+
 def align_user_features_to_csm(primary_features, singletons, 
                                list_csmf, mz_ppm=5
                                ):
@@ -211,7 +217,6 @@ def align_user_features_to_csm(primary_features, singletons,
         )
     return clean_dict_match
 
-
 def annotate_without_aligned(primary_features, singletons, clean_dict_match, list_neumr):
     '''
     Placeholder.
@@ -222,16 +227,14 @@ def annotate_without_aligned(primary_features, singletons, clean_dict_match, lis
     '''
     pass
 
-
-#
-# CSMF ref based anno
-#
-
 def csmf_annotate_from_epd_json(json_epd_file, 
                                 reflib,
                                 method,
                                 primary_ion='M0,M+H+'
                                 ):
+    '''
+    Obsolete. Use csm_annotate.annotate_epdJSON_by_csm. 
+    '''
     epdlist = json.load(open(json_epd_file))
     clean_dict_match, featureDict = csmf_annotate_from_epd_list(epdlist, 
                                 reflib, # method, primary_ion
@@ -242,6 +245,7 @@ def csmf_annotate_from_epd_list(epdlist,
                                 reflib,
                                 ):
     '''
+    Obsolete. Use csm_annotate.annotate_epdJSON_by_csm. 
     Returns mappd dict btw user features and CSM features.
     
     Some functions like this one are for conversion only. 
@@ -259,10 +263,10 @@ def csmf_annotate_from_epd_list(epdlist,
                     ) 
     return clean_dict_match, featureDict
 
-
 def csmf_annotate_from_separate_lists(list_khipus, list_singletons, list_features,
                                 csm_reflib,
-                                primary_ions_ordered
+                                primary_ions_ordered,
+                                mz_tolerance_ppm
                                 ):
     '''
     Returns mappd dict btw user features and CSM features, and a feature dict. 
@@ -279,6 +283,7 @@ def csmf_annotate_from_separate_lists(list_khipus, list_singletons, list_feature
     ]
     clean_dict_match =  align_user_features_to_csm(
                     list_pri_features, list_singletons, csm_reflib.values(), 
+                    mz_ppm=mz_tolerance_ppm
                     )   # feature ID to CSM_feature ID
     
     # expand anno to redundant khipu features
@@ -359,7 +364,7 @@ def write_anno_csmf_format_old(anno, header, outfile='test_csmf_anno.tsv', sep='
 #
 # other utils
 #
-    
+
 def get_clean_dict_match(matched, dict_csmfTracks, dict_fTracks, 
                          dict_csmfs, dict_features):
     '''
@@ -436,7 +441,6 @@ def select_topN_csmfs_retired(csmfs, N, dict_csmfs, dict_member_size):
     '''
     return sorted(csmfs, key=lambda x: dict_member_size[dict_csmfs[x]['id']], reverse=True)[:N]
 
-
 def get_MDB_records(NMR):
     if 'MDB_records' in NMR:
         return [x['id'] for x in NMR['MDB_records']]
@@ -486,7 +490,6 @@ def select_mdb(LL,
         return prioritized[0]
     else:
         return None
-    
     
 def test_match_feature_number(study_number_ontrack, list_matched_cmsfs):
     return [
