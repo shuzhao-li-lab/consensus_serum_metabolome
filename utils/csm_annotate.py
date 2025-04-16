@@ -101,7 +101,8 @@ def annotate_lists_by_csm(
                         ):
     '''
     returns anno dict, header, list of primary_fids, stats
-    
+    anno is a dict {fid: ['feature_ID', 'mz', 'rtime', 'ion_relation', 
+              'CSMF_ID', 'ion_csm', 'neuMR_ID', 'formula', ...]}
     '''
     clean_dict_match, featureDict, primary_fids = csmf_annotate_from_separate_lists(
         list_khipus, list_singletons, list_features, reflib, 
@@ -132,11 +133,42 @@ def annotate_lists_by_csm(
             
     return anno, header, primary_fids, stats
 
+def retrieve_primary_feature(khipu, primary_fids):
+    result = None
+    for f in khipu['MS1_pseudo_Spectra']:
+        if f['id'] in primary_fids:
+            result = f
+            break
+    return result
+
+def extend_to_all_khipu_features(anno, primary_fids, list_khipus):
+    '''
+    Not needed. csmf_annotate_from_separate_lists includes all khipu members. 
+    If anno contains unique epds only when matching to lib, this function attaches anno to other features in khipu. 
+    Good for users to known what the features are even if they are not used in data analysis.
+    '''
+    for k,v in anno.items():
+        v['empCpd_id'] = ''
+    additional = {}
+    for kk in list_khipus:
+        primary = retrieve_primary_feature(kk, primary_fids)
+        if primary and primary['id'] in anno:
+            anno[primary['id']]['empCpd_id'] = kk['interim_id']
+            for f in kk['MS1_pseudo_Spectra']:
+                if f['id'] != primary['id']:
+                    tmp = anno[primary['id']].copy()
+                    tmp['ion_relation'] = f['ion_relation']
+                    tmp['empCpd_id'] = kk['interim_id']
+                    additional[f['id']] = tmp
+                    
+    anno.update(additional)          
+    return anno
+
 def write_csm_anno_2files(anno, header, extra_anno_dict, primary_fids,
                           outdir='', outstr='test_csmf_anno.tsv', sep='\t'):
     '''
     Write 2 tables of annotation, following columns in header, for full and recommended_.
-    anno as dict of fid: dict
+    anno as dict of fid: dict; empCpd_id added during extend_to_all_khipu_features
     featureDict : all features
     extra_anno_dict : extracted from asari output, default HMDB level 4 annotation.
     

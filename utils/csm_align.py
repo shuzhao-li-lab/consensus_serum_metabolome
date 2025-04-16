@@ -270,6 +270,7 @@ def csmf_annotate_from_separate_lists(list_khipus, list_singletons, list_feature
                                 ):
     '''
     Returns mappd dict btw user features and CSM features, and a feature dict. 
+    clean_dict_match includes all member features in a khipu, not limited to primary feature.
     list_khipus, list_singletons, list_features = run_khipu_insitu(asari_table, ...)
     '''
     featureDict = {}
@@ -320,7 +321,7 @@ def export_csmf_annotation(clean_dict_match,
     '''
     bmDict['unknown'] = {'name': 'unknown'}
     anno = {}
-    header = ['feature_ID', 'mz', 'rtime', 'ion_relation', 
+    header = ['feature_ID', 'mz', 'rtime', 'ion_relation', 'empCpd_id',
               'CSMF_ID', 'ion_csm', 'neuMR_ID', 'formula', 
               'top_recommendation', 'top_recommendation_id', 'top_recommendation_name', 'top_recommendation_score', 
               'top3', 'full_score_dict']
@@ -346,6 +347,7 @@ def export_csmf_annotation(clean_dict_match,
         
         anno[fid] = dict(zip(header, (fid, _feature['mz'], _feature['rtime'], 
                 _feature.get('ion_relation', ''), # may not exist for singletons
+                _feature.get('parent_epd_id', ''),
                 csmf_id, reflib[csmf_id]['ion'], _neu, get_formula_from_neumr(_neu, neuDict),
                 top1, top1_id, top1_name, top1_score, top3, scores 
                 )))

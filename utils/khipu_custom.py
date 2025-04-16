@@ -78,7 +78,8 @@ def run_khipu_insitu(asari_table,
               separate_singletons=False,
               ):
     '''
-    returns list of l
+    returns list of khipus, [singletons,] features.
+    Features are updated with parent_epd_id. 
     
     mz_tolerance_ppm : m/z tolerance in matching, user supplied parameter.
     rt_tolerance : retention time tolerance in seconds for matching, user supplied parameter.
@@ -88,7 +89,7 @@ def run_khipu_insitu(asari_table,
     _n, list_features_ = read_features_from_asari_table(open(asari_table).read())
     for f in list_features_:
         f['representative_intensity'] = f['peak_area']
-            
+  
     mass_accuracy_ratio, features = custom_mz_calibrate(list_features_, KCD_formula_coordinate, 
                                                     mode=mode, 
                                                     mz_tolerance_ppm=30, # this is for initial filter only
@@ -102,14 +103,18 @@ def run_khipu_insitu(asari_table,
     # First khipu organized empCpds
     EED.build_from_list_peaks(features)
     singletons = [p for p in EED.dict_peaks if p not in EED.peak_to_empCpd.keys()]
+    list_khipus = list(EED.dict_empCpds.values())
+    # EED.peak_to_empCpd[P['id_number']] = interim_id
+    for f in list_features_:
+        f['parent_epd_id'] = EED.peak_to_empCpd.get(f['id'], '')
+    
+    EED = eed_combined_epdList(EED, singletons)
+    if out_json:     # export empCpds here to JSON, including singletons.
+        EED.export_empCpds(out_json)
     
     if separate_singletons:
-        return list(EED.dict_empCpds.values()), singletons, list_features_
+        return list_khipus, singletons, list_features_
     else:
-        EED = eed_combined_epdList(EED, singletons)
-        # export empCpds here to JSON, including singletons.
-        if out_json:
-            EED.export_empCpds(out_json)
         return list(EED.dict_empCpds.values()), list_features_
 
 
