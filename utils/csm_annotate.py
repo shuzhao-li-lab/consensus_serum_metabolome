@@ -20,6 +20,7 @@ def annotate_asari_table_by_csm(
                         method='rppos',         # not used
                         mz_tolerance_ppm=5, 
                         rt_tolerance=2,
+                        out_json='__epds.json',
                         quality_filter=False,
                         ):
     '''
@@ -42,6 +43,7 @@ def annotate_asari_table_by_csm(
                                 mode = mode,
                                 mz_tolerance_ppm=mz_tolerance_ppm, 
                                 rt_tolerance=rt_tolerance,
+                                out_json=out_json,
                                 separate_singletons=True,
                                 )
     # list_singletons from run_khipu_insitu is list of IDs

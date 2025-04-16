@@ -74,7 +74,7 @@ def run_khipu_insitu(asari_table,
               extended_adducts,
               mode = 'pos',
               mz_tolerance_ppm=5, rt_tolerance=2,
-              out_json=False,
+              out_json='epds.json',   # use None to switch off
               separate_singletons=False,
               ):
     '''
