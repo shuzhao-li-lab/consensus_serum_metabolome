@@ -62,11 +62,11 @@ def read_features_from_asari_table(text_table,
                 'left_base': float(a[left_base]),
                 'right_base': float(a[right_base]),
                 'parent_masstrack_id': a[parent_masstrack_id],
-                'peak_area': a[peak_area],
-                'cSelectivity': a[cSelectivity],
-                'goodness_fitting': a[goodness_fitting],
-                'snr': a[snr],
-                'detection_counts': a[detection_counts],
+                'peak_area': float(a[peak_area]),
+                'cSelectivity': float(a[cSelectivity]),
+                'goodness_fitting': float(a[goodness_fitting]),
+                'snr': float(a[snr]),
+                'detection_counts': int(a[detection_counts]),
             })
     return num_samples, L
 
@@ -822,6 +822,62 @@ def get_isopair_features(full_list_empCpds, isopair_empCpds):
             isopair_features += epd['MS1_pseudo_Spectra']
 
     return isopair_features
+
+def check_isopair_khipu(epd, isotope_ratio_limit=0.5, M0="M0", M1="13C/12C"):
+    '''
+    Check if an empCpd has good isopair (M0 and M1) matched adduct form with natural isotope ratio limit.
+    Returns pair of features that pass the criteria.
+    '''
+    # all_modifications = set(feat['modification'] for feat in epd['MS1_pseudo_Spectra'])
+    # Sort modifications
+    modi_dict = {}
+    for feat in epd['MS1_pseudo_Spectra']:
+        modi = feat['modification']
+        if modi not in modi_dict:
+            modi_dict[modi] = [feat]
+        else:
+            modi_dict[modi].append(feat)
+    # check presence of M0 and M1
+    good_mods = []
+    for modi, feats in modi_dict.items():
+        isotopes = [feat['isotope'] for feat in feats]
+        if M0 in isotopes and M1 in isotopes:
+            good_mods.append(modi)
+    # check isotope_ratio_limit. Feature "ion_relation" should be unique within an empCpd
+    final_good_mods = []
+    for modi in good_mods:
+        M0_feat = [feat for feat in modi_dict[modi] if feat['isotope'] == M0][0]
+        M1_feat = [feat for feat in modi_dict[modi] if feat['isotope'] == M1][0]
+        ratio = float(M1_feat['representative_intensity']) / (1 + float(M0_feat['representative_intensity']))
+        if ratio < isotope_ratio_limit:
+            final_good_mods.append((M0_feat, M1_feat))
+    
+    if not final_good_mods:
+        return None
+    elif len(final_good_mods) == 1:
+        return final_good_mods[0]
+    else: # get best pair by intensity
+        best_pair = max(final_good_mods, 
+                        key=lambda x: x[0]['representative_intensity'])
+        return best_pair
+
+def filter_isopair_khipus(list_empCpds, natural_ratio_limit=0.5):
+    '''
+    returns 
+    isopair_empCpds = with good natural 13C ratio, based on M1/M0, matched adduct form.
+ 
+    Usage
+    -----
+    full_list_empCpds  = json.load(open(json_empcpd))
+    isopair_empCpds = filter_isopair_khipus(full_list_empCpds)
+    '''
+    isopair_empCpds = []
+    for epd in list_empCpds:
+        pp = check_isopair_khipu(epd, isotope_ratio_limit=natural_ratio_limit)
+        if pp:
+            isopair_empCpds.append( epd['interim_id'] )
+
+    return isopair_empCpds
 
 def compare(list1, list2, mz_ppm=5, rt_tolerance=1e9):
     '''compare matches and print unmatched in list1. 
